@@ -10,8 +10,7 @@ import {
   Globe,
   Briefcase,
   GraduationCap,
-  Folder,
-  Sparkles
+  Folder
 } from 'lucide-react';
 
 function getSetIcon(name) {
@@ -144,12 +143,8 @@ export function SetSwitcher({
                 type="button"
                 onClick={() => onSelectSet(set)}
                 style={{
-                  background: isSelected 
-                    ? 'linear-gradient(135deg, #FF9A86 0%, #F87D65 100%)' 
-                    : 'transparent',
-                  border: isSelected 
-                    ? '1.5px solid #F87D65' 
-                    : '1px solid transparent',
+                  background: isSelected ? '#FF5900' : 'transparent',
+                  border: isSelected ? '1.5px solid #FF5900' : '1px solid transparent',
                   borderRadius: '12px',
                   padding: '0.5rem 0.95rem',
                   fontSize: '0.86rem',
@@ -159,8 +154,7 @@ export function SetSwitcher({
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '0.45rem',
-                  transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                  boxShadow: isSelected ? '0 4px 14px rgba(248, 125, 101, 0.35)' : 'none',
+                  transition: 'all 0.15s ease',
                   transform: isSelected ? 'scale(1.02)' : 'scale(1)'
                 }}
               >
