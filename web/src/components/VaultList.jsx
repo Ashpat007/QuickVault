@@ -3,9 +3,9 @@ import { supabase } from '../lib/supabaseClient';
 import { EntryRow } from './EntryRow';
 import { AddEntryModal } from './AddEntryModal';
 import { EmptyState } from './EmptyState';
-import { Plus, Search, CheckCircle2, ShieldAlert, X, Sparkles } from 'lucide-react';
+import { Plus, Search, CheckCircle2, ShieldAlert, X, Sparkles, Command } from 'lucide-react';
 
-export function VaultList({ session, currentSet }) {
+export function VaultList({ session, currentSet, availableSets = [], onOpenCommandPalette, onMoveEntryToSet }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -31,7 +31,6 @@ export function VaultList({ session, currentSet }) {
   };
 
   useEffect(() => {
-    // Only show loading indicator on initial set load if no entries loaded yet
     const isFirstTime = entries.length === 0;
     loadEntries(isFirstTime);
   }, [currentSet?.id, userId]);
@@ -47,6 +46,7 @@ export function VaultList({ session, currentSet }) {
         await supabase.entries.updateEntry(entryData.id, userId, {
           label: entryData.label,
           value: entryData.value,
+          note: entryData.note,
           entry_type: entryData.entry_type,
           is_private: entryData.is_private
         });
@@ -58,6 +58,7 @@ export function VaultList({ session, currentSet }) {
           setId: currentSet.id,
           label: entryData.label,
           value: entryData.value,
+          note: entryData.note,
           entryType: entryData.entry_type,
           isPrivate: entryData.is_private,
           sortOrder: nextOrder
@@ -81,6 +82,17 @@ export function VaultList({ session, currentSet }) {
     }
   };
 
+  const handleMoveToAnotherSet = async (entryId, targetSetId) => {
+    try {
+      await supabase.entries.moveEntryToSet(entryId, userId, targetSetId);
+      const targetSet = availableSets.find(s => s.id === targetSetId);
+      showToast(`Moved entry to "${targetSet?.name || 'Target'}" profile`);
+      await loadEntries(false);
+    } catch (err) {
+      setErrorMessage('Failed to move entry: ' + err.message);
+    }
+  };
+
   const handleMove = async (index, direction) => {
     const targetIndex = index + direction;
     if (targetIndex < 0 || targetIndex >= entries.length) return;
@@ -100,6 +112,7 @@ export function VaultList({ session, currentSet }) {
   const filteredEntries = entries.filter(e => 
     e.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
     e.value.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (e.note && e.note.toLowerCase().includes(searchQuery.toLowerCase())) ||
     e.entry_type.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -114,8 +127,8 @@ export function VaultList({ session, currentSet }) {
         marginBottom: '1.4rem',
         flexWrap: 'wrap'
       }}>
-        {/* Search Bar */}
-        <div style={{ flex: 1, minWidth: '240px', position: 'relative' }}>
+        {/* Search Bar with Ctrl+K Button */}
+        <div style={{ flex: 1, minWidth: '240px', position: 'relative', display: 'flex', alignItems: 'center' }}>
           <Search 
             size={18} 
             style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} 
@@ -123,18 +136,45 @@ export function VaultList({ session, currentSet }) {
           <input
             type="text"
             className="modern-input"
-            style={{ paddingLeft: '2.75rem', paddingRight: searchQuery ? '2.5rem' : '1rem' }}
-            placeholder="Search entries by label, value, or type..."
+            style={{ paddingLeft: '2.75rem', paddingRight: '5.5rem' }}
+            placeholder="Search entries or press Ctrl + K..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
+          
+          <button
+            type="button"
+            onClick={onOpenCommandPalette}
+            style={{
+              position: 'absolute',
+              right: searchQuery ? '32px' : '10px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'var(--coral-light)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: '8px',
+              padding: '0.2rem 0.5rem',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              color: 'var(--coral-text)',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.2rem'
+            }}
+            title="Open Command Palette (Ctrl + K)"
+          >
+            <Command size={12} />
+            <span>K</span>
+          </button>
+
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
               style={{
                 position: 'absolute',
-                right: '12px',
+                right: '10px',
                 top: '50%',
                 transform: 'translateY(-50%)',
                 background: 'none',
@@ -224,6 +264,10 @@ export function VaultList({ session, currentSet }) {
             <EntryRow
               key={entry.id}
               entry={entry}
+              index={idx}
+              availableSets={availableSets}
+              currentSetId={currentSet?.id}
+              onMoveToSet={handleMoveToAnotherSet}
               onCopy={(item) => showToast(`Copied "${item.label}" to clipboard!`)}
               onEdit={(item) => {
                 setEditingEntry(item);

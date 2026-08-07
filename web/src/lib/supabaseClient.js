@@ -170,6 +170,15 @@ export const supabase = {
       return { data: { session, user: session.user }, error: null };
     },
 
+    async resetPasswordForEmail(email, { redirectTo } = {}) {
+      if (isConfigured) {
+        const { data, error } = await realSupabase.auth.resetPasswordForEmail(email, { redirectTo });
+        if (error) return { data: null, error };
+        return { data, error: null };
+      }
+      return { data: {}, error: null };
+    },
+
     async signOut() {
       if (isConfigured) {
         const { error } = await realSupabase.auth.signOut();
@@ -184,6 +193,7 @@ export const supabase = {
 
   sets: {
     async fetchUserSets(userId) {
+      let rawSets = [];
       if (isConfigured) {
         const { data, error } = await realSupabase
           .from('sets')
@@ -191,32 +201,45 @@ export const supabase = {
           .eq('user_id', userId)
           .order('created_at', { ascending: true });
         if (error) throw error;
-        return data;
+        rawSets = data || [];
+      } else {
+        rawSets = getLocalSets().filter(s => s.user_id === userId);
       }
-      const sets = getLocalSets().filter(s => s.user_id === userId);
-      return sets;
+
+      // Deduplicate sets by name (keep the first created instance per name)
+      const uniqueSets = [];
+      const seenNames = new Set();
+      for (const set of rawSets) {
+        const nameKey = set.name.toLowerCase().trim();
+        if (!seenNames.has(nameKey)) {
+          seenNames.add(nameKey);
+          uniqueSets.push(set);
+        }
+      }
+      return uniqueSets;
     },
 
     async createDefaultSet(userId) {
-      const defaultSet = {
-        user_id: userId,
-        name: 'Personal',
-        is_public: false,
-        public_slug: null
-      };
-
       if (isConfigured) {
         const { data: existing } = await realSupabase
           .from('sets')
           .select('*')
-          .eq('user_id', userId)
-          .eq('name', 'Personal');
+          .eq('user_id', userId);
 
-        if (existing && existing.length > 0) return existing[0];
+        if (existing && existing.length > 0) {
+          const personal = existing.find(s => s.name.toLowerCase() === 'personal');
+          if (personal) return personal;
+          return existing[0];
+        }
 
         const { data, error } = await realSupabase
           .from('sets')
-          .insert([defaultSet])
+          .insert([{
+            user_id: userId,
+            name: 'Personal',
+            is_public: false,
+            public_slug: null
+          }])
           .select()
           .single();
         if (error) throw error;
@@ -224,13 +247,104 @@ export const supabase = {
       }
 
       const sets = getLocalSets();
-      const existing = sets.find(s => s.user_id === userId && s.name === 'Personal');
+      const existing = sets.find(s => s.user_id === userId && s.name.toLowerCase() === 'personal');
       if (existing) return existing;
 
-      const newSet = { ...defaultSet, id: `set-${Date.now()}`, created_at: new Date().toISOString() };
+      const newSet = {
+        id: `set-${Date.now()}`,
+        user_id: userId,
+        name: 'Personal',
+        is_public: false,
+        public_slug: null,
+        created_at: new Date().toISOString()
+      };
       sets.push(newSet);
       saveLocalSets(sets);
       return newSet;
+    },
+
+    async createSet(userId, name) {
+      const trimmedName = name.trim();
+      const payload = {
+        user_id: userId,
+        name: trimmedName,
+        is_public: false,
+        public_slug: null
+      };
+
+      if (isConfigured) {
+        // Check if set with same name already exists
+        const { data: existing } = await realSupabase
+          .from('sets')
+          .select('*')
+          .eq('user_id', userId)
+          .ilike('name', trimmedName);
+
+        if (existing && existing.length > 0) {
+          return existing[0];
+        }
+
+        const { data, error } = await realSupabase
+          .from('sets')
+          .insert([payload])
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      }
+
+      const sets = getLocalSets();
+      const existing = sets.find(s => s.user_id === userId && s.name.toLowerCase() === trimmedName.toLowerCase());
+      if (existing) return existing;
+
+      const newSet = { ...payload, id: `set-${Date.now()}`, created_at: new Date().toISOString() };
+      sets.push(newSet);
+      saveLocalSets(sets);
+      return newSet;
+    },
+
+    async renameSet(setId, userId, newName) {
+      if (isConfigured) {
+        const { data, error } = await realSupabase
+          .from('sets')
+          .update({ name: newName.trim() })
+          .eq('id', setId)
+          .eq('user_id', userId)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      }
+
+      const sets = getLocalSets();
+      const index = sets.findIndex(s => s.id === setId && s.user_id === userId);
+      if (index === -1) throw new Error('Set not found');
+      sets[index].name = newName.trim();
+      saveLocalSets(sets);
+      return sets[index];
+    },
+
+    async deleteSet(setId, userId) {
+      if (isConfigured) {
+        const { error } = await realSupabase
+          .from('sets')
+          .delete()
+          .eq('id', setId)
+          .eq('user_id', userId);
+        if (error) throw error;
+        return true;
+      }
+
+      let sets = getLocalSets();
+      sets = sets.filter(s => !(s.id === setId && s.user_id === userId));
+      saveLocalSets(sets);
+
+      // Also clean up local entries
+      let entries = getLocalEntries();
+      entries = entries.filter(e => e.set_id !== setId);
+      saveLocalEntries(entries);
+
+      return true;
     },
 
     async toggleShareMode(setId, userId, makePublic) {
@@ -319,12 +433,13 @@ export const supabase = {
       return entries;
     },
 
-    async createEntry({ userId, setId, label, value, entryType, isPrivate = false, sortOrder = 0 }) {
+    async createEntry({ userId, setId, label, value, note = '', entryType, isPrivate = false, sortOrder = 0 }) {
       const payload = {
         user_id: userId,
         set_id: setId,
         label,
         value,
+        note: note ? note.trim() : null,
         entry_type: entryType,
         is_private: isPrivate,
         sort_order: sortOrder
@@ -336,7 +451,21 @@ export const supabase = {
           .insert([payload])
           .select()
           .single();
-        if (error) throw error;
+
+        if (error) {
+          // Fallback if 'note' column doesn't exist yet on remote Supabase DB
+          if (error.message && error.message.includes("Could not find the 'note' column")) {
+            delete payload.note;
+            const { data: retryData, error: retryError } = await realSupabase
+              .from('entries')
+              .insert([payload])
+              .select()
+              .single();
+            if (retryError) throw retryError;
+            return retryData;
+          }
+          throw error;
+        }
         return data;
       }
 
@@ -360,7 +489,23 @@ export const supabase = {
           .eq('user_id', userId)
           .select()
           .single();
-        if (error) throw error;
+
+        if (error) {
+          if (error.message && error.message.includes("Could not find the 'note' column")) {
+            const copyUpdates = { ...updates };
+            delete copyUpdates.note;
+            const { data: retryData, error: retryError } = await realSupabase
+              .from('entries')
+              .update(copyUpdates)
+              .eq('id', id)
+              .eq('user_id', userId)
+              .select()
+              .single();
+            if (retryError) throw retryError;
+            return retryData;
+          }
+          throw error;
+        }
         return data;
       }
 
@@ -369,6 +514,27 @@ export const supabase = {
       if (index === -1) throw new Error('Entry not found or access denied');
 
       entries[index] = { ...entries[index], ...updates };
+      saveLocalEntries(entries);
+      return entries[index];
+    },
+
+    async moveEntryToSet(id, userId, targetSetId) {
+      if (isConfigured) {
+        const { data, error } = await realSupabase
+          .from('entries')
+          .update({ set_id: targetSetId })
+          .eq('id', id)
+          .eq('user_id', userId)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      }
+
+      const entries = getLocalEntries();
+      const index = entries.findIndex(e => e.id === id && e.user_id === userId);
+      if (index === -1) throw new Error('Entry not found');
+      entries[index].set_id = targetSetId;
       saveLocalEntries(entries);
       return entries[index];
     },

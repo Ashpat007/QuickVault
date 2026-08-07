@@ -17,11 +17,15 @@ create table if not exists entries (
   set_id uuid references sets(id) on delete cascade not null,
   label text not null,
   value text not null,
+  note text,
   entry_type text not null,
   is_private boolean default false,
   sort_order int default 0,
   created_at timestamptz default now()
 );
+
+-- Add note column if table already exists
+alter table entries add column if not exists note text;
 
 -- Enable RLS
 alter table sets enable row level security;
