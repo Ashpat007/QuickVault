@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 
 export default function App() {
+  // Synchronous session initialization to eliminate flash
   const [session, setSession] = useState(() => {
     try {
       const raw = localStorage.getItem('quickvault_local_session');
@@ -450,17 +451,6 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="main-wrapper">
-        {!session && !loading && (
-          <div className="hero-header-box">
-            <h1 className="hero-title">
-              Your Personal Quick-Copy Vault
-            </h1>
-            <p className="hero-subtitle">
-              Instantly copy recurring links, handles, emails, and snippets with a single tap.
-            </p>
-          </div>
-        )}
-
         {loading ? (
           <div className="glass-card" style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--text-muted)' }}>
             Initializing QuickVault...

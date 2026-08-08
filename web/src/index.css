@@ -1,8 +1,8 @@
 /* QuickVault Modern Solid Color Design System */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700;800&display=swap');
 
 :root {
-  /* Curated Palette - Solid Swatch Tokens */
+  /* Curated Solid Swatch Tokens */
   --coral-accent: #FF5900;       /* Pantone Orange Accent */
   --coral-dark: #E04D00;         /* Deep Hover State */
   --coral-light: #FFF0E6;        /* Light Cream Orange Badge */
@@ -34,7 +34,7 @@
   --code-bg: #F8FAFC;
   
   --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
-  --shadow-hover: 0 6px 16px -2px rgba(15, 23, 42, 0.08), 0 3px 6px -2px rgba(15, 23, 42, 0.04);
+  --shadow-hover: 0 8px 24px -2px rgba(15, 23, 42, 0.08), 0 4px 8px -2px rgba(15, 23, 42, 0.04);
 }
 
 [data-theme="dark"] {
@@ -143,19 +143,6 @@ body.modal-open-lock {
   gap: 0.6rem;
 }
 
-.user-badge-pill {
-  background: var(--surface-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 9999px;
-  padding: 0.4rem 0.85rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-
 .nav-btn-icon {
   background: var(--surface-card);
   border: 1px solid var(--border-subtle);
@@ -196,7 +183,7 @@ body.modal-open-lock {
   background: var(--coral-light);
 }
 
-/* Main Content Container with Relaxed Breathing Room */
+/* Main Content Container */
 .main-wrapper {
   max-width: 900px;
   margin: 2rem auto 4rem;
@@ -205,26 +192,85 @@ body.modal-open-lock {
   z-index: 10;
 }
 
-.hero-header-box {
-  text-align: center;
-  margin: 1.5rem 0 2rem;
+/* Auth Card Styling — Centered, Solid & Crisp */
+.auth-card-container {
+  max-width: 480px;
+  margin: 2rem auto 4rem;
+  padding: 0 1rem;
 }
 
-.hero-title {
-  font-family: 'Outfit', sans-serif;
-  font-size: 2.25rem;
-  font-weight: 800;
-  letter-spacing: -0.038em;
-  color: var(--text-main);
-  line-height: 1.15;
+.auth-card-box {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 24px;
+  padding: 2.4rem 2.2rem;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.hero-subtitle {
+.auth-card-box:hover {
+  box-shadow: var(--shadow-hover);
+  border-color: var(--border-strong);
+}
+
+.auth-brand-badge {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: #FF5900;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.15rem;
+  box-shadow: 0 6px 20px rgba(255, 89, 0, 0.35);
+}
+
+.auth-tab-bar {
+  display: flex;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 0.35rem;
+  margin-bottom: 1.5rem;
+  gap: 0.35rem;
+}
+
+.auth-tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
   color: var(--text-muted);
-  font-size: 1rem;
+  padding: 0.65rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.auth-tab-btn:hover:not(.active) {
+  color: var(--text-main);
+  background: var(--surface-card-hover);
+}
+
+.auth-tab-btn.active {
+  background: #FF5900;
+  color: #FFFFFF;
+  box-shadow: 0 2px 10px rgba(255, 89, 0, 0.3);
+}
+
+.auth-security-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 1.6rem;
+  font-size: 0.78rem;
+  color: var(--text-light);
   font-weight: 500;
-  margin-top: 0.45rem;
-  letter-spacing: -0.01em;
+  text-align: center;
 }
 
 /* Unified Command Deck */
@@ -301,12 +347,6 @@ body.modal-open-lock {
   gap: 0.75rem;
 }
 
-.deck-search-row {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-}
-
 /* Glass Card Surfaces */
 .glass-card {
   background: var(--surface-card);
@@ -317,7 +357,7 @@ body.modal-open-lock {
   transition: all 0.2s ease;
 }
 
-/* Entry Card with generous whitespace */
+/* Entry Card */
 .vault-entry-card-3d {
   background: var(--surface-card);
   border: 1px solid var(--border-subtle);
