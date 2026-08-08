@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { KeyRound, Mail, Lock, Sparkles, ArrowRight, Eye, EyeOff, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { KeyRound, Mail, Lock, ArrowRight, Sparkles, CheckCircle2, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 
 export function Auth({ onAuthSuccess }) {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -20,133 +20,102 @@ export function Auth({ onAuthSuccess }) {
 
     try {
       if (isForgotPassword) {
-        // Trigger Password Reset Email
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
           redirectTo: window.location.origin
         });
         if (error) throw error;
-        setSuccessMessage(`Password reset link sent to ${email}! Please check your email inbox.`);
-      } else if (isSignUp) {
-        // Sign Up
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        setSuccessMessage('Password recovery link sent! Check your inbox (or spam) to set a new password.');
+        return;
+      }
+
+      if (isSignUp) {
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password
+        });
         if (error) throw error;
         if (data?.session) {
           onAuthSuccess(data.session);
         } else {
-          setIsSignUp(false);
-          setPassword('');
-          setSuccessMessage(`Account created for ${email}! Please check your inbox for the confirmation email link.`);
+          setSuccessMessage('Account created! A confirmation link has been sent to your email.');
         }
       } else {
-        // Log In
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password
+        });
         if (error) throw error;
         if (data?.session) {
           onAuthSuccess(data.session);
         }
       }
     } catch (err) {
-      let msg = err.message || 'Authentication failed. Please check your credentials.';
-      if (msg.toLowerCase().includes('invalid login credentials')) {
-        msg = 'Invalid email or password. Note: If you just signed up, make sure to click the verification link sent to your email inbox first!';
-      }
-      setErrorMessage(msg);
+      setErrorMessage(err.message || 'Authentication failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: '440px', margin: '0.5rem auto' }}>
-      <div className="glass-card" style={{ padding: '2rem 2rem' }}>
-        
-        {/* Auth Icon */}
-        <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
-          <div 
-            className="brand-icon-box" 
-            style={{ width: '50px', height: '50px', margin: '0 auto 0.8rem', borderRadius: '16px' }}
-          >
+    <div className="auth-card-container">
+      <div className="auth-card-box">
+        {/* Brand Header */}
+        <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
+          <div className="auth-brand-badge">
             <KeyRound size={26} />
           </div>
-
-          <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.65rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
-            {isForgotPassword 
-              ? 'Reset Password' 
-              : isSignUp 
-                ? 'Create your Vault' 
-                : 'Welcome to QuickVault'}
+          <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.03em', marginBottom: '0.35rem' }}>
+            {isForgotPassword ? 'Reset Password' : isSignUp ? 'Create QuickVault' : 'Welcome to QuickVault'}
           </h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginTop: '0.3rem', fontWeight: 500 }}>
-            {isForgotPassword
-              ? 'Enter your email to receive a password reset link.'
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            {isForgotPassword 
+              ? 'Enter your email to receive a secure password recovery link'
               : isSignUp 
-                ? 'Save & copy your links, handles and snippets instantly.' 
-                : 'Sign in to access your personal quick-copy vault.'}
+                ? 'Get your 1-tap quick copy link vault in 30 seconds' 
+                : '1-tap copy your links, handles, emails, and snippets'}
           </p>
         </div>
 
-        {/* Tab Switcher Bar (Hidden when in Forgot Password mode) */}
+        {/* Tab Switcher */}
         {!isForgotPassword && (
-          <div className="auth-tab-bar" style={{ marginBottom: '1.25rem' }}>
+          <div className="auth-tab-bar">
             <button
               type="button"
-              onClick={() => { setIsSignUp(false); setErrorMessage(''); setSuccessMessage(''); }}
               className={`auth-tab-btn ${!isSignUp ? 'active' : ''}`}
+              onClick={() => { setIsSignUp(false); setErrorMessage(''); setSuccessMessage(''); }}
             >
               Log In
             </button>
-
             <button
               type="button"
-              onClick={() => { setIsSignUp(true); setErrorMessage(''); setSuccessMessage(''); }}
               className={`auth-tab-btn ${isSignUp ? 'active' : ''}`}
+              onClick={() => { setIsSignUp(true); setErrorMessage(''); setSuccessMessage(''); }}
             >
               Sign Up
             </button>
           </div>
         )}
 
-        {supabase.isLocalDemo && (
-          <div style={{ 
-            background: 'var(--coral-light)', 
-            border: '1px solid var(--border-strong)', 
-            borderRadius: '14px', 
-            padding: '0.75rem 1rem', 
-            fontSize: '0.82rem', 
+        {/* Alerts */}
+        {successMessage && (
+          <div style={{
+            background: 'var(--surface-elevated)',
+            border: '1.5px solid var(--coral-accent)',
             color: 'var(--coral-text)',
-            fontWeight: 600,
+            padding: '0.85rem 1rem',
+            borderRadius: '14px',
+            fontSize: '0.84rem',
+            fontWeight: 700,
             marginBottom: '1.15rem',
             display: 'flex',
             alignItems: 'center',
             gap: '0.5rem'
           }}>
-            <Sparkles size={15} style={{ flexShrink: 0 }} />
-            <span>Local demo mode active. Enter any email to start!</span>
+            <CheckCircle2 size={18} color="var(--coral-accent)" />
+            <span>{successMessage}</span>
           </div>
         )}
 
-        {/* Success Alert Banner (Green) */}
-        {successMessage && (
-          <div style={{
-            background: '#E8F8F0',
-            color: '#10B981',
-            border: '1px solid #A7F3D0',
-            padding: '0.85rem 1rem',
-            borderRadius: '14px',
-            fontSize: '0.86rem',
-            fontWeight: 600,
-            marginBottom: '1.15rem',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '0.6rem',
-            lineHeight: 1.45
-          }}>
-            <CheckCircle2 size={18} style={{ flexShrink: 0, marginTop: '2px', color: '#10B981' }} />
-            <div>{successMessage}</div>
-          </div>
-        )}
-
-        {/* Error Alert Banner (Red) */}
         {errorMessage && (
           <div style={{
             background: '#FFEBEB',
@@ -241,9 +210,10 @@ export function Auth({ onAuthSuccess }) {
                     display: 'flex',
                     alignItems: 'center'
                   }}
-                  title={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Password is visible (click to hide)' : 'Password is hidden (click to show)'}
                 >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  {/* Intuitive visual matching: Eye when visible, EyeOff when masked */}
+                  {showPassword ? <Eye size={18} color="var(--coral-accent)" /> : <EyeOff size={18} />}
                 </button>
               </div>
             </div>
@@ -254,37 +224,38 @@ export function Auth({ onAuthSuccess }) {
             type="submit"
             disabled={loading}
             className="btn-primary-action"
-            style={{ width: '100%', padding: '0.82rem', fontSize: '0.95rem' }}
+            style={{ width: '100%', padding: '0.82rem', fontSize: '0.95rem', justifyContent: 'center' }}
           >
-            {loading ? 'Processing...' : (isForgotPassword ? 'Send Reset Link' : isSignUp ? 'Create Account' : 'Log In')}
+            <span>{loading ? 'Processing...' : isForgotPassword ? 'Send Recovery Link' : isSignUp ? 'Create Account' : 'Log In to QuickVault'}</span>
             <ArrowRight size={18} />
           </button>
+        </form>
 
-          {/* Back to Login Button (When in Forgot Password Mode) */}
-          {isForgotPassword && (
+        {/* Forgot Password Back Button */}
+        {isForgotPassword && (
+          <div style={{ textAlign: 'center', marginTop: '1.25rem' }}>
             <button
               type="button"
               onClick={() => { setIsForgotPassword(false); setErrorMessage(''); setSuccessMessage(''); }}
               style={{
-                width: '100%',
-                marginTop: '0.85rem',
                 background: 'none',
                 border: 'none',
                 color: 'var(--text-muted)',
-                fontSize: '0.86rem',
+                fontSize: '0.85rem',
                 fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.4rem'
+                cursor: 'pointer'
               }}
             >
-              <ArrowLeft size={16} />
-              <span>Back to Log In</span>
+              ← Back to Login
             </button>
-          )}
-        </form>
+          </div>
+        )}
+
+        {/* Security Note Footer */}
+        <div className="auth-security-notice">
+          <ShieldCheck size={14} color="#20BF6B" />
+          <span>QuickVault is designed for recurring links, handles, and snippets.</span>
+        </div>
       </div>
     </div>
   );

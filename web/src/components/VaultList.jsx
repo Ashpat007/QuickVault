@@ -3,36 +3,51 @@ import { supabase } from '../lib/supabaseClient';
 import { EntryRow } from './EntryRow';
 import { AddEntryModal } from './AddEntryModal';
 import { EmptyState } from './EmptyState';
-import { Plus, Search, CheckCircle2, ShieldAlert, X, Sparkles, Command } from 'lucide-react';
+import { ShieldAlert, CheckCircle2 } from 'lucide-react';
 
-export function VaultList({ session, currentSet, availableSets = [], onOpenCommandPalette, onMoveEntryToSet }) {
+export function VaultList({ 
+  session, 
+  currentSet, 
+  availableSets = [], 
+  searchQuery = '',
+  onOpenCommandPalette, 
+  isModalOpen,
+  setIsModalOpen,
+  editingEntry,
+  setEditingEntry,
+  onEntriesLoaded 
+}) {
   const [entries, setEntries] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingEntry, setEditingEntry] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
 
   const userId = session?.user?.id;
 
   const loadEntries = async (showLoading = false) => {
-    if (!currentSet?.id || !userId) return;
+    const activeSetId = currentSet?.id || (availableSets && availableSets[0]?.id);
+    if (!activeSetId || !userId) {
+      setLoading(false);
+      return;
+    }
     if (showLoading) setLoading(true);
     setErrorMessage(null);
     try {
-      const data = await supabase.entries.fetchEntries(currentSet.id, userId);
-      setEntries(data || []);
+      const data = await supabase.entries.fetchEntries(activeSetId, userId);
+      const safeData = data || [];
+      setEntries(safeData);
+      if (onEntriesLoaded) {
+        onEntriesLoaded(safeData);
+      }
     } catch (err) {
       setErrorMessage('Failed to load vault entries: ' + err.message);
     } finally {
-      if (showLoading) setLoading(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    const isFirstTime = entries.length === 0;
-    loadEntries(isFirstTime);
+    loadEntries(false);
   }, [currentSet?.id, userId]);
 
   const showToast = (msg) => {
@@ -42,20 +57,37 @@ export function VaultList({ session, currentSet, availableSets = [], onOpenComma
 
   const handleSaveEntry = async (entryData) => {
     try {
+      setErrorMessage(null);
+      let targetSetId = currentSet?.id || (availableSets && availableSets[0]?.id);
+      
+      if (!targetSetId && userId) {
+        let defSet = await supabase.sets.createDefaultSet(userId);
+        if (!defSet) {
+          defSet = await supabase.sets.createSet(userId, 'Personal');
+        }
+        targetSetId = defSet?.id;
+      }
+
+      if (!targetSetId) {
+        targetSetId = `set-${Date.now()}`;
+      }
+
       if (entryData.id) {
-        await supabase.entries.updateEntry(entryData.id, userId, {
+        await supabase.entries.updateEntry({
+          id: entryData.id,
+          userId,
           label: entryData.label,
           value: entryData.value,
           note: entryData.note,
-          entry_type: entryData.entry_type,
-          is_private: entryData.is_private
+          entryType: entryData.entry_type,
+          isPrivate: entryData.is_private
         });
         showToast('Entry updated successfully');
       } else {
         const nextOrder = entries.length;
         await supabase.entries.createEntry({
           userId,
-          setId: currentSet.id,
+          setId: targetSetId,
           label: entryData.label,
           value: entryData.value,
           note: entryData.note,
@@ -63,7 +95,7 @@ export function VaultList({ session, currentSet, availableSets = [], onOpenComma
           isPrivate: entryData.is_private,
           sortOrder: nextOrder
         });
-        showToast('New entry added');
+        showToast('New entry added to vault');
       }
       await loadEntries(false);
     } catch (err) {
@@ -98,135 +130,32 @@ export function VaultList({ session, currentSet, availableSets = [], onOpenComma
     if (targetIndex < 0 || targetIndex >= entries.length) return;
 
     const newEntries = [...entries];
-    const [moved] = newEntries.splice(index, 1);
-    newEntries.splice(targetIndex, 0, moved);
+    const [movedItem] = newEntries.splice(index, 1);
+    newEntries.splice(targetIndex, 0, movedItem);
 
     setEntries(newEntries);
+    if (onEntriesLoaded) onEntriesLoaded(newEntries);
     try {
-      await supabase.entries.updateSortOrders(userId, newEntries);
+      await supabase.entries.reorderEntries(userId, newEntries);
     } catch (err) {
-      console.error('Failed to save reordered items', err);
+      console.error('Failed to reorder entries', err);
+      loadEntries(false);
     }
   };
 
-  const filteredEntries = entries.filter(e => 
-    e.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    e.value.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (e.note && e.note.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    e.entry_type.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredEntries = entries.filter((e) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      (e.label && e.label.toLowerCase().includes(q)) ||
+      (e.value && e.value.toLowerCase().includes(q)) ||
+      (e.entry_type && e.entry_type.toLowerCase().includes(q)) ||
+      (e.note && e.note.toLowerCase().includes(q))
+    );
+  });
 
   return (
-    <div>
-      {/* Top Toolbar */}
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'space-between', 
-        gap: '0.85rem',
-        marginBottom: '1.4rem',
-        flexWrap: 'wrap'
-      }}>
-        {/* Search Bar with Ctrl+K Button */}
-        <div style={{ flex: 1, minWidth: '240px', position: 'relative', display: 'flex', alignItems: 'center' }}>
-          <Search 
-            size={18} 
-            style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} 
-          />
-          <input
-            type="text"
-            className="modern-input"
-            style={{ paddingLeft: '2.75rem', paddingRight: '5.5rem' }}
-            placeholder="Search entries or press Ctrl + K..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          
-          <button
-            type="button"
-            onClick={onOpenCommandPalette}
-            style={{
-              position: 'absolute',
-              right: searchQuery ? '32px' : '10px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              background: 'var(--coral-light)',
-              border: '1px solid var(--border-strong)',
-              borderRadius: '8px',
-              padding: '0.2rem 0.5rem',
-              fontSize: '0.72rem',
-              fontWeight: 700,
-              color: 'var(--coral-text)',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.2rem'
-            }}
-            title="Open Command Palette (Ctrl + K)"
-          >
-            <Command size={12} />
-            <span>K</span>
-          </button>
-
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              style={{
-                position: 'absolute',
-                right: '10px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-light)',
-                cursor: 'pointer',
-                padding: '4px',
-                display: 'flex',
-                alignItems: 'center'
-              }}
-            >
-              <X size={16} />
-            </button>
-          )}
-        </div>
-
-        {/* Item Counter Badge */}
-        {entries.length > 0 && (
-          <div style={{
-            background: 'var(--surface-card)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '14px',
-            padding: '0.65rem 1rem',
-            fontSize: '0.84rem',
-            fontWeight: 700,
-            color: 'var(--text-muted)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.45rem',
-            boxShadow: 'var(--shadow-card)'
-          }}>
-            <Sparkles size={15} color="var(--coral-accent)" />
-            <span>
-              {searchQuery ? `${filteredEntries.length} of ${entries.length}` : `${entries.length} Items`}
-            </span>
-          </div>
-        )}
-
-        {/* Hero Add Entry Button */}
-        <button
-          type="button"
-          onClick={() => {
-            setEditingEntry(null);
-            setIsModalOpen(true);
-          }}
-          className="btn-primary-action"
-        >
-          <Plus size={18} />
-          <span>Add Entry</span>
-        </button>
-      </div>
-
+    <div style={{ marginTop: '0.5rem' }}>
       {errorMessage && (
         <div style={{
           background: '#FFEBEB',
@@ -244,15 +173,15 @@ export function VaultList({ session, currentSet, availableSets = [], onOpenComma
         </div>
       )}
 
-      {/* Loading state */}
+      {/* Loading vs Empty vs Entries list */}
       {loading ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
           Loading your vault...
         </div>
       ) : entries.length === 0 ? (
         <EmptyState onAddFirstEntry={() => {
-          setEditingEntry(null);
-          setIsModalOpen(true);
+          if (setEditingEntry) setEditingEntry(null);
+          if (setIsModalOpen) setIsModalOpen(true);
         }} />
       ) : filteredEntries.length === 0 ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
@@ -270,8 +199,8 @@ export function VaultList({ session, currentSet, availableSets = [], onOpenComma
               onMoveToSet={handleMoveToAnotherSet}
               onCopy={(item) => showToast(`Copied "${item.label}" to clipboard!`)}
               onEdit={(item) => {
-                setEditingEntry(item);
-                setIsModalOpen(true);
+                if (setEditingEntry) setEditingEntry(item);
+                if (setIsModalOpen) setIsModalOpen(true);
               }}
               onDelete={handleDeleteEntry}
               onMoveUp={() => handleMove(idx, -1)}
@@ -284,15 +213,17 @@ export function VaultList({ session, currentSet, availableSets = [], onOpenComma
       )}
 
       {/* Add / Edit Entry Modal */}
-      <AddEntryModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setEditingEntry(null);
-        }}
-        onSave={handleSaveEntry}
-        editingEntry={editingEntry}
-      />
+      {isModalOpen && (
+        <AddEntryModal
+          isOpen={isModalOpen}
+          onClose={() => {
+            if (setIsModalOpen) setIsModalOpen(false);
+            if (setEditingEntry) setEditingEntry(null);
+          }}
+          onSave={handleSaveEntry}
+          editingEntry={editingEntry}
+        />
+      )}
 
       {/* Toast Notification */}
       {toastMessage && (

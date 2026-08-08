@@ -4,6 +4,7 @@ import { Auth } from './components/Auth';
 import { VaultList } from './components/VaultList';
 import { SetSwitcher } from './components/SetSwitcher';
 import { ShareModal } from './components/ShareModal';
+import { BackupModal } from './components/BackupModal';
 import { UserGuideModal } from './components/UserGuideModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { PublicSharePage } from './pages/PublicSharePage';
@@ -24,16 +25,50 @@ import {
   Save, 
   X,
   Eye,
-  EyeOff
+  EyeOff,
+  Database,
+  BarChart2,
+  Plus,
+  Search,
+  Sparkles
 } from 'lucide-react';
 
 export default function App() {
-  const [session, setSession] = useState(null);
-  const [userSets, setUserSets] = useState([]);
-  const [currentSet, setCurrentSet] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState(() => {
+    try {
+      const raw = localStorage.getItem('quickvault_local_session');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [userSets, setUserSets] = useState(() => {
+    try {
+      const raw = localStorage.getItem('quickvault_local_sets');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [currentSet, setCurrentSet] = useState(() => {
+    try {
+      const raw = localStorage.getItem('quickvault_local_sets');
+      const sets = raw ? JSON.parse(raw) : [];
+      return sets && sets.length > 0 ? sets[0] : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false);
@@ -44,7 +79,10 @@ export default function App() {
   const currentSetRef = useRef(currentSet);
   currentSetRef.current = currentSet;
 
-  // Bulletproof Chrome Extension DOM & PostMessage Sync Bridge
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+
+  // Extension sync bridge
   const syncWithExtension = (sets, items) => {
     try {
       const setsData = sets || [];
@@ -73,7 +111,7 @@ export default function App() {
     }
   };
 
-  // Theme State ('light' | 'dark')
+  // Theme state
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('quickvault_theme') || 'light';
   });
@@ -87,12 +125,33 @@ export default function App() {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
-  // Global Ctrl + K / Cmd + K Shortcut Listener
+  // ⚡ Global Alt + 1..3 & Ctrl + K hotkeys
   useEffect(() => {
-    const handleKeyDown = (e) => {
+    const handleKeyDown = async (e) => {
+      const activeEl = document.activeElement;
+      const tag = activeEl ? activeEl.tagName.toLowerCase() : '';
+      const isTyping = tag === 'input' || tag === 'textarea' || tag === 'select' || activeEl?.isContentEditable;
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsCommandPaletteOpen(prev => !prev);
+        return;
+      }
+
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !isTyping && ['1', '2', '3'].includes(e.key)) {
+        e.preventDefault();
+        const hotkeyIndex = parseInt(e.key, 10) - 1;
+        const currentEntries = entriesRef.current;
+        if (currentEntries && currentEntries[hotkeyIndex]) {
+          const target = currentEntries[hotkeyIndex];
+          try {
+            await navigator.clipboard.writeText(target.value);
+            setToastMessage(`⚡ Copied "${target.label}" via Alt + ${e.key}!`);
+            setTimeout(() => setToastMessage(null), 2500);
+          } catch (err) {
+            console.error('Failed hotkey copy', err);
+          }
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -110,11 +169,9 @@ export default function App() {
     }
 
     let isSubscribed = true;
-
     const hasAuthToken = window.location.hash.includes('access_token') || window.location.search.includes('code');
     const isRecoveryFlow = window.location.hash.includes('type=recovery') || window.location.search.includes('type=recovery');
 
-    // 1. Initial session check
     supabase.auth.getSession().then(({ data }) => {
       if (!isSubscribed) return;
       const currentSession = data?.session || null;
@@ -132,13 +189,12 @@ export default function App() {
             window.history.replaceState(null, '', window.location.pathname);
           }
         }
-        initSetsAndData(currentSession.user.id, true);
+        initSetsAndData(currentSession.user.id, false);
       } else {
         setLoading(false);
       }
     });
 
-    // 2. Listen to auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange((event, newSession) => {
       if (!isSubscribed) return;
       setSession(newSession);
@@ -155,8 +211,7 @@ export default function App() {
         if (window.location.hash || window.location.search) {
           window.history.replaceState(null, '', window.location.pathname);
         }
-        const isFirstLoad = !currentSetRef.current;
-        initSetsAndData(newSession.user.id, isFirstLoad);
+        initSetsAndData(newSession.user.id, false);
       } else {
         setCurrentSet(null);
         setUserSets([]);
@@ -173,20 +228,21 @@ export default function App() {
   const initSetsAndData = async (userId, showLoading = false) => {
     if (showLoading && !currentSetRef.current) setLoading(true);
     try {
-      await supabase.sets.createDefaultSet(userId);
+      const defaultSet = await supabase.sets.createDefaultSet(userId);
       const sets = await supabase.sets.fetchUserSets(userId);
-      setUserSets(sets || []);
+      const safeSets = sets && sets.length > 0 ? sets : (defaultSet ? [defaultSet] : []);
+      setUserSets(safeSets);
 
-      const activeSet = currentSetRef.current && sets.some(s => s.id === currentSetRef.current.id)
-        ? sets.find(s => s.id === currentSetRef.current.id)
-        : (sets[0] || null);
+      const activeSet = currentSetRef.current && safeSets.some(s => s.id === currentSetRef.current.id)
+        ? safeSets.find(s => s.id === currentSetRef.current.id)
+        : (safeSets[0] || defaultSet || null);
 
       setCurrentSet(activeSet);
 
       if (activeSet) {
         const data = await supabase.entries.fetchEntries(activeSet.id, userId);
         setEntries(data || []);
-        syncWithExtension(sets, data || []);
+        syncWithExtension(safeSets, data || []);
       }
     } catch (err) {
       console.error('Failed to initialize sets and data', err);
@@ -197,7 +253,7 @@ export default function App() {
 
   const handleSelectSet = async (set) => {
     setCurrentSet(set);
-    if (session) {
+    if (session && set?.id) {
       try {
         const data = await supabase.entries.fetchEntries(set.id, session.user.id);
         setEntries(data || []);
@@ -294,6 +350,8 @@ export default function App() {
     }
   };
 
+  const totalCopies = entries.reduce((acc, curr) => acc + (curr.copy_count || 0), 0);
+
   if (publicSlug) {
     return <PublicSharePage slug={publicSlug} />;
   }
@@ -303,9 +361,16 @@ export default function App() {
       {/* Top Navbar */}
       <nav className="navbar-sticky">
         <div className="nav-container">
-          <div className="brand-logo-btn" onClick={() => window.location.href = '/'}>
+          <div 
+            className="brand-logo-btn" 
+            onClick={() => {
+              if (window.location.pathname !== '/') {
+                window.location.href = '/';
+              }
+            }}
+          >
             <div className="brand-icon-box">
-              <KeyRound size={22} />
+              <KeyRound size={20} />
             </div>
             <span className="brand-title">QuickVault</span>
           </div>
@@ -319,8 +384,21 @@ export default function App() {
                 className="nav-btn-icon"
                 title="Search Command Palette (Ctrl + K)"
               >
-                <Command size={15} color="var(--coral-accent)" />
+                <Command size={14} color="var(--coral-accent)" />
                 <span><kbd className="kbd-badge">Ctrl K</kbd></span>
+              </button>
+            )}
+
+            {/* Backup & Restore Trigger */}
+            {session && (
+              <button
+                type="button"
+                onClick={() => setIsBackupModalOpen(true)}
+                className="nav-btn-icon"
+                title="Vault Backup & Restore (JSON / CSV)"
+              >
+                <Database size={14} color="var(--coral-accent)" />
+                <span>Backup</span>
               </button>
             )}
 
@@ -331,7 +409,7 @@ export default function App() {
               className="theme-toggle-btn"
               title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
             >
-              {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+              {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
             </button>
 
             <button
@@ -339,16 +417,21 @@ export default function App() {
               onClick={() => setIsGuideModalOpen(true)}
               className="nav-btn-icon"
             >
-              <HelpCircle size={16} color="var(--coral-accent)" />
+              <HelpCircle size={15} color="var(--coral-accent)" />
               <span>Guide</span>
             </button>
 
             {session && (
-              <>
-                <div className="user-badge-pill">
-                  <User size={14} color="var(--coral-accent)" />
-                  <span>{session.user.email}</span>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', borderLeft: '1px solid var(--border-subtle)', paddingLeft: '0.65rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsResetPasswordModalOpen(true)}
+                  className="nav-btn-icon"
+                  title="Update Password"
+                >
+                  <Lock size={13} color="var(--coral-accent)" />
+                  <span>Password</span>
+                </button>
 
                 <button
                   type="button"
@@ -356,10 +439,10 @@ export default function App() {
                   className="nav-btn-icon"
                   title="Log Out"
                 >
-                  <LogOut size={14} />
+                  <LogOut size={13} />
                   <span>Log Out</span>
                 </button>
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -386,106 +469,192 @@ export default function App() {
           <Auth onAuthSuccess={(newSession) => setSession(newSession)} />
         ) : (
           <div>
-            {/* Multiple Profiles / Sets Switcher Bar */}
-            <SetSwitcher
-              sets={userSets}
-              currentSet={currentSet}
-              onSelectSet={handleSelectSet}
-              onCreateSet={handleCreateSet}
-              onRenameSet={handleRenameSet}
-              onDeleteSet={handleDeleteSet}
-            />
+            {/* UNIFIED COMMAND DECK: Profiles + Quick Actions + Search in One Clean Card */}
+            <div className="command-deck-container">
+              {/* Row 1: Profile Selector Tabs (Left) & Quick Action Buttons (Right) */}
+              <div className="deck-top-row">
+                <SetSwitcher
+                  sets={userSets}
+                  currentSet={currentSet}
+                  onSelectSet={handleSelectSet}
+                  onCreateSet={handleCreateSet}
+                  onRenameSet={handleRenameSet}
+                  onDeleteSet={handleDeleteSet}
+                />
 
-            {/* Active Vault Set Header */}
-            <div className="profile-header-card">
-              <div className="profile-info">
-                <div className="profile-avatar-icon">
-                  <FolderHeart size={22} />
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                    <h3 className="profile-title">
-                      {currentSet?.name || 'Personal'} Vault
-                    </h3>
-                    {currentSet?.is_public && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <span 
-                          onClick={() => setIsShareModalOpen(true)}
-                          style={{
-                            fontSize: '0.72rem',
-                            fontWeight: 800,
-                            color: '#20BF6B',
-                            background: 'rgba(32, 191, 107, 0.14)',
-                            padding: '0.2rem 0.6rem',
-                            borderRadius: '9999px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.25rem',
-                            cursor: 'pointer'
-                          }}
-                          title="Click to view QR & Share details"
-                        >
-                          <Globe size={12} /> PUBLIC SHARE ACTIVE
-                        </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsShareModalOpen(true)}
+                    className="btn-secondary-action"
+                    style={{ padding: '0.55rem 1rem', fontSize: '0.84rem' }}
+                  >
+                    <QrCode size={16} color="var(--coral-accent)" />
+                    <span>{currentSet?.is_public ? 'QR & Share' : 'Make Shareable'}</span>
+                  </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleToggleShare(false)}
-                          style={{
-                            background: '#FFEBEB',
-                            color: '#EB3B5A',
-                            border: '1.5px solid #FFC2C2',
-                            padding: '0.2rem 0.6rem',
-                            borderRadius: '9999px',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.25rem'
-                          }}
-                          title="Stop public sharing immediately"
-                        >
-                          <ShieldOff size={11} />
-                          <span>Stop Sharing</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <p className="profile-subtitle">
-                    Active Profile Set ({userSets.length} Total Profiles)
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingEntry(null);
+                      setIsModalOpen(true);
+                    }}
+                    className="btn-primary-action"
+                    style={{ padding: '0.55rem 1.15rem', fontSize: '0.85rem' }}
+                  >
+                    <Plus size={16} />
+                    <span>Add Entry</span>
+                  </button>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setIsResetPasswordModalOpen(true)}
-                  className="btn-secondary-action"
-                  title="Update Password"
-                >
-                  <Lock size={16} color="var(--coral-accent)" />
-                  <span>Update Password</span>
-                </button>
+              {/* Row 2: Active Profile Meta, Status Pill, and Analytics Metrics */}
+              <div className="deck-meta-row">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+                  <strong style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.05rem', color: 'var(--text-main)' }}>
+                    {currentSet?.name || 'Personal'} Vault
+                  </strong>
 
-                <button
-                  type="button"
-                  onClick={() => setIsShareModalOpen(true)}
-                  className="btn-secondary-action"
-                >
-                  <QrCode size={18} color="var(--coral-accent)" />
-                  <span>{currentSet?.is_public ? 'QR & Share Details' : 'Make Shareable'}</span>
-                </button>
+                  {/* Public Status Pill */}
+                  {currentSet?.is_public ? (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span 
+                        onClick={() => setIsShareModalOpen(true)}
+                        style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          color: '#20BF6B',
+                          background: 'rgba(32, 191, 107, 0.14)',
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '9999px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          cursor: 'pointer'
+                        }}
+                        title="Click to view QR & Share details"
+                      >
+                        <Globe size={12} /> PUBLIC SHARE ACTIVE
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleShare(false)}
+                        style={{
+                          background: '#FFEBEB',
+                          color: '#EB3B5A',
+                          border: '1px solid #FFC2C2',
+                          padding: '0.15rem 0.55rem',
+                          borderRadius: '9999px',
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem'
+                        }}
+                        title="Stop public sharing immediately"
+                      >
+                        <ShieldOff size={11} />
+                        <span>Stop</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <span style={{
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      color: 'var(--text-light)',
+                      background: 'var(--surface-elevated)',
+                      padding: '0.15rem 0.55rem',
+                      borderRadius: '9999px',
+                      border: '1px solid var(--border-subtle)'
+                    }}>
+                      🔒 Private Profile
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  {/* Live Analytics Pill */}
+                  <span style={{
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    color: 'var(--text-muted)',
+                    background: 'var(--surface-elevated)',
+                    border: '1px solid var(--border-subtle)',
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: '8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem'
+                  }} title="Total public views and link copies">
+                    <BarChart2 size={13} color="var(--coral-accent)" />
+                    <span>{currentSet?.view_count || 0} Views · {totalCopies} Copies</span>
+                  </span>
+
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-light)', fontWeight: 600 }}>
+                    <kbd className="kbd-badge" style={{ fontSize: '0.65rem' }}>Alt 1..3</kbd> copies top links
+                  </span>
+                </div>
+              </div>
+
+              {/* Row 3: Integrated Search Bar */}
+              <div style={{ position: 'relative', width: '100%' }}>
+                <Search 
+                  size={16} 
+                  color="var(--text-light)" 
+                  style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} 
+                />
+                <input
+                  type="text"
+                  className="modern-input"
+                  style={{ paddingLeft: '2.5rem', paddingRight: '5rem', height: '42px', fontSize: '0.88rem' }}
+                  placeholder="Search your links, handles, or press Ctrl + K..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+
+                {/* Clear Search & Counter badge */}
+                <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-light)',
+                        cursor: 'pointer',
+                        padding: '2px',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <X size={15} />
+                    </button>
+                  )}
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-light)', fontWeight: 700 }}>
+                    {entries.length} Items
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Vault List for current set */}
+            {/* Vault List for current set with breathing room */}
             <VaultList 
               session={session} 
               currentSet={currentSet} 
               availableSets={userSets}
+              searchQuery={searchQuery}
               onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+              isModalOpen={isModalOpen}
+              setIsModalOpen={setIsModalOpen}
+              editingEntry={editingEntry}
+              setEditingEntry={setEditingEntry}
+              onEntriesLoaded={(loadedEntries) => {
+                setEntries(loadedEntries || []);
+                syncWithExtension(userSets, loadedEntries || []);
+              }}
             />
 
             {/* Share / QR Modal */}
@@ -496,6 +665,14 @@ export default function App() {
               onToggleShare={handleToggleShare}
             />
 
+            {/* Backup & Restore Modal */}
+            <BackupModal
+              isOpen={isBackupModalOpen}
+              onClose={() => setIsBackupModalOpen(false)}
+              userId={session?.user?.id}
+              onBackupRestored={() => initSetsAndData(session?.user?.id, false)}
+            />
+
             {/* Command Palette Spotlight Modal */}
             <CommandPaletteModal
               isOpen={isCommandPaletteOpen}
@@ -504,7 +681,7 @@ export default function App() {
               onCopyItem={handleCommandPaletteCopy}
             />
 
-            {/* Set New Password Modal (Password Recovery & Update) */}
+            {/* Set New Password Modal */}
             {isResetPasswordModalOpen && (
               <div className="modal-overlay-blur" onClick={() => setIsResetPasswordModalOpen(false)}>
                 <div 
@@ -586,9 +763,9 @@ export default function App() {
                             alignItems: 'center',
                             padding: '4px'
                           }}
-                          title={showPassword ? 'Hide Password' : 'Show Password'}
+                          title={showPassword ? 'Password is visible (click to hide)' : 'Password is hidden (click to show)'}
                         >
-                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          {showPassword ? <Eye size={16} color="var(--coral-accent)" /> : <EyeOff size={16} />}
                         </button>
                       </div>
                     </div>

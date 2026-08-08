@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS sets (
     name TEXT NOT NULL,
     is_public BOOLEAN DEFAULT false,
     public_slug TEXT UNIQUE,
+    view_count INTEGER DEFAULT 0, -- Public Card View Analytics
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -21,10 +22,13 @@ CREATE TABLE IF NOT EXISTS entries (
     entry_type TEXT DEFAULT 'text',
     is_private BOOLEAN DEFAULT true, -- P0 Security Default: Secured by default
     sort_order INTEGER DEFAULT 0,
+    copy_count INTEGER DEFAULT 0, -- Public & Private Copy Tap Analytics
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- 3. Migrations for existing deployments
+ALTER TABLE sets ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0;
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS copy_count INTEGER DEFAULT 0;
 ALTER TABLE entries ADD COLUMN IF NOT EXISTS note TEXT;
 ALTER TABLE entries ADD COLUMN IF NOT EXISTS set_id UUID REFERENCES sets(id) ON DELETE CASCADE;
 ALTER TABLE entries ALTER COLUMN is_private SET DEFAULT true;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { detectEntryType, detectPasswordRisk } from '../lib/typeDetector';
-import { X, Sparkles, AlertOctagon, Save, Plus, Lock, Mail, Phone, Link as LinkIcon, FileText, AlignLeft } from 'lucide-react';
+import { X, Sparkles, AlertOctagon, Save, Plus, Lock, Mail, Phone, Link as LinkIcon, FileText } from 'lucide-react';
 
 function GithubIcon({ size = 18 }) {
   return (
@@ -36,7 +36,6 @@ export function AddEntryModal({ isOpen, onClose, onSave, editingEntry = null }) 
   const [note, setNote] = useState('');
   const [entryType, setEntryType] = useState('text');
   const [detectedTypeName, setDetectedTypeName] = useState('');
-  // P0 Security Fix: Default is_private to true on every new entry!
   const [isPrivate, setIsPrivate] = useState(true);
   const [autoDetected, setAutoDetected] = useState(false);
   const [passwordWarning, setPasswordWarning] = useState(null);
@@ -71,7 +70,6 @@ export function AddEntryModal({ isOpen, onClose, onSave, editingEntry = null }) 
       setNote('');
       setEntryType('text');
       setDetectedTypeName('');
-      // P0 Security Fix: Default to true for new entries
       setIsPrivate(true);
       setAutoDetected(false);
       setPasswordWarning(null);
@@ -89,12 +87,23 @@ export function AddEntryModal({ isOpen, onClose, onSave, editingEntry = null }) 
 
     if (rawVal.trim() && !userOverrodeType) {
       const detection = detectEntryType(rawVal);
-      setEntryType(detection.type);
-      setDetectedTypeName(detection.label);
-      setAutoDetected(true);
+      const matchedType = detection.entryType || 'text';
+      const matchedLabel = detection.suggestedLabel || '';
 
-      if (!userOverrodeLabel && (!label || label === detectedTypeName || label === 'GitHub Profile' || label === 'LinkedIn Handle' || label === 'Email Address' || label === 'Phone Number' || label === 'Web Link')) {
-        setLabel(detection.label);
+      if (matchedType !== 'text' && matchedLabel) {
+        setEntryType(matchedType);
+        setDetectedTypeName(matchedLabel);
+        setAutoDetected(true);
+
+        if (!userOverrodeLabel || !label || label.startsWith('GitHub') || label.startsWith('LinkedIn') || label.startsWith('Email') || label.startsWith('Phone') || label.startsWith('Web Link')) {
+          setLabel(matchedLabel);
+        }
+      } else {
+        setDetectedTypeName('');
+        setAutoDetected(false);
+        if (!userOverrodeType) {
+          setEntryType('text');
+        }
       }
     } else if (!rawVal.trim()) {
       if (!userOverrodeType) {
@@ -227,7 +236,7 @@ export function AddEntryModal({ isOpen, onClose, onSave, editingEntry = null }) 
               <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)' }}>
                 Type Symbol
               </label>
-              {autoDetected && !userOverrodeType && (
+              {autoDetected && detectedTypeName && (
                 <span style={{
                   fontSize: '0.7rem',
                   fontWeight: 800,
@@ -239,7 +248,7 @@ export function AddEntryModal({ isOpen, onClose, onSave, editingEntry = null }) 
                   alignItems: 'center',
                   gap: '0.25rem'
                 }}>
-                  <Sparkles size={11} /> Auto-Detected ({detectedTypeName})
+                  <Sparkles size={11} /> Auto-Detected
                 </span>
               )}
               {userOverrodeType && (

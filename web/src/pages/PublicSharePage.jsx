@@ -10,7 +10,7 @@ import {
   Mail, 
   Phone, 
   Globe, 
-  FileText,
+  FileText, 
   Lock,
   ArrowRight,
   HelpCircle,
@@ -76,6 +76,11 @@ export function PublicSharePage({ slug }) {
       setSet(publicSet);
       const publicEntries = await supabase.entries.fetchPublicEntries(publicSet.id);
       setEntries(publicEntries || []);
+
+      // 1. 📊 Increment Public Card View Count
+      if (showLoading && publicSet.id) {
+        supabase.analytics.incrementSetViews(publicSet.id);
+      }
     } catch (err) {
       console.error('Error fetching public set', err);
       setSet(null);
@@ -102,6 +107,8 @@ export function PublicSharePage({ slug }) {
       await navigator.clipboard.writeText(entry.value);
       setCopiedId(entry.id);
       setToastMessage(`Copied "${entry.label}" to clipboard!`);
+      // 2. 📊 Increment Public Copy Count
+      supabase.analytics.incrementEntryCopies(entry.id);
       setTimeout(() => setCopiedId(null), 2000);
       setTimeout(() => setToastMessage(null), 2500);
     } catch (err) {

@@ -159,6 +159,7 @@ export const supabase = {
           name: 'Personal',
           is_public: false,
           public_slug: null,
+          view_count: 0,
           created_at: new Date().toISOString()
         };
         sets.push(personalSet);
@@ -195,6 +196,7 @@ export const supabase = {
           name: 'Personal',
           is_public: false,
           public_slug: null,
+          view_count: 0,
           created_at: new Date().toISOString()
         });
         saveLocalSets(sets);
@@ -235,7 +237,6 @@ export const supabase = {
           .order('created_at', { ascending: true });
         if (error) throw error;
         
-        // Deduplicate sets by case-insensitive name
         const seenNames = new Set();
         const deduplicated = (data || []).filter(set => {
           const lower = set.name.toLowerCase();
@@ -244,47 +245,60 @@ export const supabase = {
           return true;
         });
 
+        if (deduplicated.length === 0) {
+          const def = await supabase.sets.createDefaultSet(userId);
+          return def ? [def] : [];
+        }
+
         return deduplicated;
       }
 
       const sets = getLocalSets().filter(s => s.user_id === userId);
       const seenNames = new Set();
-      return sets.filter(set => {
+      const localDeduplicated = sets.filter(set => {
         const lower = set.name.toLowerCase();
         if (seenNames.has(lower)) return false;
         seenNames.add(lower);
         return true;
       });
+
+      if (localDeduplicated.length === 0) {
+        const def = await supabase.sets.createDefaultSet(userId);
+        return def ? [def] : [];
+      }
+
+      return localDeduplicated;
     },
 
     async createDefaultSet(userId) {
       if (isConfigured) {
-        const { data: existing } = await realSupabase
-          .from('sets')
-          .select('*')
-          .eq('user_id', userId)
-          .ilike('name', 'Personal');
+        try {
+          const { data: existing } = await realSupabase
+            .from('sets')
+            .select('*')
+            .eq('user_id', userId)
+            .ilike('name', 'Personal');
 
-        if (existing && existing.length > 0) {
-          return existing[0];
+          if (existing && existing.length > 0) {
+            return existing[0];
+          }
+
+          const { data, error } = await realSupabase
+            .from('sets')
+            .insert([{
+              user_id: userId,
+              name: 'Personal',
+              is_public: false,
+              public_slug: null,
+              view_count: 0
+            }])
+            .select()
+            .single();
+
+          if (!error && data) return data;
+        } catch (e) {
+          console.warn('Fallback set creation', e);
         }
-
-        const { data, error } = await realSupabase
-          .from('sets')
-          .insert([{
-            user_id: userId,
-            name: 'Personal',
-            is_public: false,
-            public_slug: null
-          }])
-          .select()
-          .single();
-
-        if (error) {
-          console.warn('Default set check', error.message);
-          return null;
-        }
-        return data;
       }
 
       const sets = getLocalSets();
@@ -296,6 +310,7 @@ export const supabase = {
           name: 'Personal',
           is_public: false,
           public_slug: null,
+          view_count: 0,
           created_at: new Date().toISOString()
         };
         sets.push(personal);
@@ -305,32 +320,36 @@ export const supabase = {
     },
 
     async createSet(userId, name) {
-      const trimmedName = name.trim();
+      const trimmedName = (name || 'Personal').trim();
       const payload = {
         user_id: userId,
         name: trimmedName,
         is_public: false,
-        public_slug: null
+        public_slug: null,
+        view_count: 0
       };
 
       if (isConfigured) {
-        const { data: existing } = await realSupabase
-          .from('sets')
-          .select('*')
-          .eq('user_id', userId)
-          .ilike('name', trimmedName);
+        try {
+          const { data: existing } = await realSupabase
+            .from('sets')
+            .select('*')
+            .eq('user_id', userId)
+            .ilike('name', trimmedName);
 
-        if (existing && existing.length > 0) {
-          return existing[0];
+          if (existing && existing.length > 0) {
+            return existing[0];
+          }
+
+          const { data, error } = await realSupabase
+            .from('sets')
+            .insert([payload])
+            .select()
+            .single();
+          if (!error && data) return data;
+        } catch (e) {
+          console.warn('Set insert fallback', e);
         }
-
-        const { data, error } = await realSupabase
-          .from('sets')
-          .insert([payload])
-          .select()
-          .single();
-        if (error) throw error;
-        return data;
       }
 
       const sets = getLocalSets();
@@ -479,7 +498,8 @@ export const supabase = {
         note: note ? note.trim() : null,
         entry_type: entryType,
         is_private: isPrivate,
-        sort_order: sortOrder
+        sort_order: sortOrder,
+        copy_count: 0
       };
 
       if (isConfigured) {
@@ -490,11 +510,10 @@ export const supabase = {
           .single();
 
         if (error) {
-          // Explicit warning on missing remote schema column instead of silent data loss
           if (error.message && error.message.includes("Could not find the 'note' column")) {
-            console.warn('[QuickVault Schema Warning] Remote Supabase database is missing the "note" column. Please execute schema migration.');
+            console.warn('[QuickVault Schema Warning] Remote Supabase database is missing the "note" column.');
             window.dispatchEvent(new CustomEvent('quickvault-note-sync-warning', {
-              detail: 'Notice: Entry saved, but your remote database schema is missing the "note" column. Please run schema.sql migration.'
+              detail: 'Notice: Entry saved, but your remote database schema is missing the "note" column.'
             }));
 
             delete payload.note;
@@ -636,6 +655,166 @@ export const supabase = {
       entries = entries.filter(e => !(e.id === id && e.user_id === userId));
       saveLocalEntries(entries);
       return true;
+    }
+  },
+
+  // 1. 📊 Public Card Analytics & Tap Tracking
+  analytics: {
+    async incrementSetViews(setId) {
+      try {
+        if (isConfigured) {
+          await realSupabase.rpc('increment_set_view', { set_row_id: setId }).catch(async () => {
+            const { data } = await realSupabase.from('sets').select('view_count').eq('id', setId).single();
+            const current = (data && data.view_count) ? data.view_count : 0;
+            await realSupabase.from('sets').update({ view_count: current + 1 }).eq('id', setId);
+          });
+          return;
+        }
+        const sets = getLocalSets();
+        const target = sets.find(s => s.id === setId);
+        if (target) {
+          target.view_count = (target.view_count || 0) + 1;
+          saveLocalSets(sets);
+        }
+      } catch (err) {
+        console.warn('View analytics increment error', err);
+      }
+    },
+
+    async incrementEntryCopies(entryId) {
+      try {
+        if (isConfigured) {
+          await realSupabase.rpc('increment_entry_copy', { entry_row_id: entryId }).catch(async () => {
+            const { data } = await realSupabase.from('entries').select('copy_count').eq('id', entryId).single();
+            const current = (data && data.copy_count) ? data.copy_count : 0;
+            await realSupabase.from('entries').update({ copy_count: current + 1 }).eq('id', entryId);
+          });
+          return;
+        }
+        const entries = getLocalEntries();
+        const target = entries.find(e => e.id === entryId);
+        if (target) {
+          target.copy_count = (target.copy_count || 0) + 1;
+          saveLocalEntries(entries);
+        }
+      } catch (err) {
+        console.warn('Copy analytics increment error', err);
+      }
+    }
+  },
+
+  // 2. 💾 1-Click Vault Backup (JSON & CSV Export/Import)
+  backup: {
+    async exportVaultToJson(userId) {
+      const sets = await supabase.sets.fetchUserSets(userId);
+      const allEntries = [];
+      for (const s of sets) {
+        const setEntries = await supabase.entries.fetchEntries(s.id, userId);
+        allEntries.push(...setEntries);
+      }
+
+      const backupData = {
+        version: '1.0',
+        exported_at: new Date().toISOString(),
+        user_id: userId,
+        sets,
+        entries: allEntries
+      };
+
+      return JSON.stringify(backupData, null, 2);
+    },
+
+    async exportVaultToCsv(userId) {
+      const sets = await supabase.sets.fetchUserSets(userId);
+      const rows = [['ProfileSet', 'Label', 'Value', 'Type', 'Note', 'IsPrivate', 'CopyCount', 'CreatedAt']];
+
+      for (const s of sets) {
+        const setEntries = await supabase.entries.fetchEntries(s.id, userId);
+        for (const e of setEntries) {
+          rows.push([
+            `"${(s.name || '').replace(/"/g, '""')}"`,
+            `"${(e.label || '').replace(/"/g, '""')}"`,
+            `"${(e.value || '').replace(/"/g, '""')}"`,
+            `"${(e.entry_type || 'text').replace(/"/g, '""')}"`,
+            `"${(e.note || '').replace(/"/g, '""')}"`,
+            e.is_private ? 'true' : 'false',
+            e.copy_count || 0,
+            `"${e.created_at || ''}"`
+          ]);
+        }
+      }
+
+      return rows.map(r => r.join(',')).join('\n');
+    },
+
+    async importVaultFromJson(userId, jsonStr) {
+      const data = JSON.parse(jsonStr);
+      if (!data.sets || !data.entries) {
+        throw new Error('Invalid QuickVault backup JSON format.');
+      }
+
+      let importedCount = 0;
+      const setMap = new Map();
+
+      // Create / Map Sets
+      for (const s of data.sets) {
+        const targetSet = await supabase.sets.createSet(userId, s.name);
+        setMap.set(s.id, targetSet.id);
+      }
+
+      // Insert Entries
+      for (const e of data.entries) {
+        const targetSetId = setMap.get(e.set_id) || (await supabase.sets.createDefaultSet(userId)).id;
+        await supabase.entries.createEntry({
+          userId,
+          setId: targetSetId,
+          label: e.label,
+          value: e.value,
+          note: e.note || '',
+          entryType: e.entry_type || 'text',
+          isPrivate: e.is_private !== undefined ? e.is_private : true
+        });
+        importedCount++;
+      }
+
+      return { importedCount };
+    },
+
+    async importVaultFromCsv(userId, csvStr) {
+      const lines = csvStr.split(/\r?\n/).filter(line => line.trim().length > 0);
+      if (lines.length <= 1) return { importedCount: 0 };
+
+      const defaultSet = await supabase.sets.createDefaultSet(userId);
+      let importedCount = 0;
+
+      // Skip header
+      for (let i = 1; i < lines.length; i++) {
+        const raw = lines[i];
+        const match = raw.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || raw.split(',');
+        if (match.length >= 3) {
+          const setName = match[0].replace(/^"|"$/g, '').trim() || 'Personal';
+          const label = match[1].replace(/^"|"$/g, '').trim();
+          const value = match[2].replace(/^"|"$/g, '').trim();
+          const entryType = match[3] ? match[3].replace(/^"|"$/g, '').trim() : 'text';
+          const note = match[4] ? match[4].replace(/^"|"$/g, '').trim() : '';
+          const isPrivate = match[5] ? match[5].toLowerCase().includes('true') : true;
+
+          const targetSet = await supabase.sets.createSet(userId, setName);
+
+          await supabase.entries.createEntry({
+            userId,
+            setId: targetSet.id || defaultSet.id,
+            label,
+            value,
+            note,
+            entryType,
+            isPrivate
+          });
+          importedCount++;
+        }
+      }
+
+      return { importedCount };
     }
   }
 };

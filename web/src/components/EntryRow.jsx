@@ -149,10 +149,22 @@ export function EntryRow({
 
       {/* Entry Metadata & Monospace Preview */}
       <div className="entry-info-container">
-        <div className="entry-title-row">
+        <div className="entry-title-row" style={{ flexWrap: 'wrap', gap: '0.45rem' }}>
           <span className="entry-label-text">{entry.label}</span>
           <span className="entry-type-tag">{entry.entry_type}</span>
-          {entry.is_private && (
+
+          {/* Quick Hotkey Badge (Alt 1..3) */}
+          {index < 3 && (
+            <kbd 
+              className="kbd-badge" 
+              title={`Press Alt + ${index + 1} anywhere to copy instantly`}
+              style={{ fontSize: '0.66rem', cursor: 'help' }}
+            >
+              Alt {index + 1}
+            </kbd>
+          )}
+
+          {entry.is_private ? (
             <span style={{
               fontSize: '0.68rem',
               fontWeight: 800,
@@ -166,6 +178,34 @@ export function EntryRow({
               gap: '0.25rem'
             }}>
               <Lock size={10} /> Private Only
+            </span>
+          ) : (
+            <span style={{
+              fontSize: '0.68rem',
+              fontWeight: 800,
+              color: '#20BF6B',
+              background: 'rgba(32, 191, 107, 0.14)',
+              padding: '0.15rem 0.5rem',
+              borderRadius: '9999px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.25rem'
+            }}>
+              Public
+            </span>
+          )}
+
+          {/* Copy Metrics */}
+          {entry.copy_count > 0 && (
+            <span style={{
+              fontSize: '0.68rem',
+              fontWeight: 700,
+              color: 'var(--text-light)',
+              background: 'var(--surface-elevated)',
+              padding: '0.15rem 0.45rem',
+              borderRadius: '6px'
+            }} title="Total copies recorded">
+              📋 {entry.copy_count} copies
             </span>
           )}
         </div>
@@ -228,16 +268,16 @@ export function EntryRow({
                   padding: '0.35rem',
                   minWidth: '140px'
                 }}>
-                  <div style={{ padding: '0.3rem 0.5rem', fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-light)', textTransform: 'uppercase' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-light)', padding: '0.25rem 0.5rem', textTransform: 'uppercase' }}>
                     Move to Profile
                   </div>
-                  {otherSets.map(set => (
+                  {otherSets.map((s) => (
                     <button
-                      key={set.id}
+                      key={s.id}
                       type="button"
                       onClick={() => {
                         setIsMoveMenuOpen(false);
-                        if (onMoveToSet) onMoveToSet(entry.id, set.id);
+                        onMoveToSet(entry.id, s.id);
                       }}
                       style={{
                         width: '100%',
@@ -249,11 +289,13 @@ export function EntryRow({
                         fontSize: '0.82rem',
                         fontWeight: 600,
                         cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.12s ease'
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        textAlign: 'left'
                       }}
                     >
-                      {set.name} Profile
+                      <span>{s.name} Profile</span>
                     </button>
                   ))}
                 </div>
@@ -269,6 +311,7 @@ export function EntryRow({
           >
             <Edit3 size={17} />
           </button>
+          
           <button
             type="button"
             onClick={() => onDelete(entry.id)}
