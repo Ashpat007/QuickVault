@@ -7,7 +7,25 @@ import { ShareModal } from './components/ShareModal';
 import { UserGuideModal } from './components/UserGuideModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { PublicSharePage } from './pages/PublicSharePage';
-import { KeyRound, LogOut, User, FolderHeart, QrCode, Globe, HelpCircle, ShieldOff, Sun, Moon, Command, CheckCircle2, Lock, Save, X } from 'lucide-react';
+import { 
+  KeyRound, 
+  LogOut, 
+  User, 
+  FolderHeart, 
+  QrCode, 
+  Globe, 
+  HelpCircle, 
+  ShieldOff, 
+  Sun, 
+  Moon, 
+  Command, 
+  CheckCircle2, 
+  Lock, 
+  Save, 
+  X,
+  Eye,
+  EyeOff
+} from 'lucide-react';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -20,11 +38,40 @@ export default function App() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false);
   const [newPasswordInput, setNewPasswordInput] = useState('');
-  const [resetSuccessMessage, setResetSuccessMessage] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
 
   const currentSetRef = useRef(currentSet);
   currentSetRef.current = currentSet;
+
+  // Bulletproof Chrome Extension DOM & PostMessage Sync Bridge
+  const syncWithExtension = (sets, items) => {
+    try {
+      const setsData = sets || [];
+      const entriesData = items || [];
+
+      window.postMessage({
+        type: 'QUICKVAULT_EXTENSION_SYNC',
+        sets: setsData,
+        entries: entriesData
+      }, '*');
+
+      let bridge = document.getElementById('__quickvault_bridge');
+      if (!bridge) {
+        bridge = document.createElement('div');
+        bridge.id = '__quickvault_bridge';
+        bridge.style.display = 'none';
+        document.body.appendChild(bridge);
+      }
+      bridge.setAttribute('data-sets', JSON.stringify(setsData));
+      bridge.setAttribute('data-entries', JSON.stringify(entriesData));
+
+      localStorage.setItem('quickvault_ext_sets', JSON.stringify(setsData));
+      localStorage.setItem('quickvault_ext_entries', JSON.stringify(entriesData));
+    } catch {
+      // safe fallback
+    }
+  };
 
   // Theme State ('light' | 'dark')
   const [theme, setTheme] = useState(() => {
@@ -139,6 +186,7 @@ export default function App() {
       if (activeSet) {
         const data = await supabase.entries.fetchEntries(activeSet.id, userId);
         setEntries(data || []);
+        syncWithExtension(sets, data || []);
       }
     } catch (err) {
       console.error('Failed to initialize sets and data', err);
@@ -153,6 +201,7 @@ export default function App() {
       try {
         const data = await supabase.entries.fetchEntries(set.id, session.user.id);
         setEntries(data || []);
+        syncWithExtension(userSets, data || []);
       } catch (err) {
         console.error('Failed to fetch set entries', err);
       }
@@ -237,8 +286,9 @@ export default function App() {
       }
       setIsResetPasswordModalOpen(false);
       setNewPasswordInput('');
-      setToastMessage('🎉 Password updated successfully!');
-      setTimeout(() => setToastMessage(null), 3000);
+      setShowPassword(false);
+      setToastMessage('🎉 Password updated successfully! Use it on your next login.');
+      setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
       alert('Failed to update password: ' + err.message);
     }
@@ -454,52 +504,93 @@ export default function App() {
               onCopyItem={handleCommandPaletteCopy}
             />
 
-            {/* Set New Password Modal (Password Recovery) */}
+            {/* Set New Password Modal (Password Recovery & Update) */}
             {isResetPasswordModalOpen && (
               <div className="modal-overlay-blur" onClick={() => setIsResetPasswordModalOpen(false)}>
                 <div 
                   className="modal-dialog-box" 
-                  style={{ maxWidth: '440px' }}
+                  style={{ maxWidth: '440px', borderRadius: '22px' }}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '1.25rem 1.75rem',
+                    padding: '1.2rem 1.6rem 1rem',
                     borderBottom: '1px solid var(--border-subtle)',
                     background: 'var(--surface-elevated)'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-                      <Lock size={20} color="var(--coral-accent)" />
-                      <h3 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                        Set New Password
-                      </h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                      <div style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '10px',
+                        background: '#FF5900',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <Lock size={18} />
+                      </div>
+                      <div>
+                        <h3 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.03em' }}>
+                          Set New Password
+                        </h3>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-light)', fontWeight: 500 }}>
+                          Update your login password
+                        </span>
+                      </div>
                     </div>
+
                     <button
                       type="button"
                       onClick={() => setIsResetPasswordModalOpen(false)}
                       className="icon-action-button"
+                      style={{ padding: '0.4rem' }}
                     >
                       <X size={18} />
                     </button>
                   </div>
 
-                  <form onSubmit={handleSaveNewPassword} style={{ padding: '1.5rem 1.75rem' }}>
-                    <div style={{ marginBottom: '1.4rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.45rem' }}>
+                  <form onSubmit={handleSaveNewPassword} style={{ padding: '1.4rem 1.6rem' }}>
+                    <div style={{ marginBottom: '1.35rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.45rem' }}>
                         Enter New Password
                       </label>
-                      <input
-                        type="password"
-                        required
-                        minLength={6}
-                        autoFocus
-                        className="modern-input"
-                        placeholder="At least 6 characters"
-                        value={newPasswordInput}
-                        onChange={(e) => setNewPasswordInput(e.target.value)}
-                      />
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          required
+                          minLength={6}
+                          autoFocus
+                          className="modern-input"
+                          style={{ paddingRight: '2.5rem' }}
+                          placeholder="At least 6 characters"
+                          value={newPasswordInput}
+                          onChange={(e) => setNewPasswordInput(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(prev => !prev)}
+                          style={{
+                            position: 'absolute',
+                            right: '0.75rem',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-light)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '4px'
+                          }}
+                          title={showPassword ? 'Hide Password' : 'Show Password'}
+                        >
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
                     </div>
 
                     <div style={{ display: 'flex', gap: '0.65rem', justifyContent: 'flex-end' }}>
@@ -507,14 +598,16 @@ export default function App() {
                         type="button"
                         onClick={() => setIsResetPasswordModalOpen(false)}
                         className="btn-secondary-action"
+                        style={{ padding: '0.6rem 1.1rem', fontSize: '0.86rem' }}
                       >
                         Cancel
                       </button>
                       <button
                         type="submit"
                         className="btn-primary-action"
+                        style={{ padding: '0.6rem 1.25rem', fontSize: '0.86rem' }}
                       >
-                        <Save size={16} />
+                        <Save size={15} />
                         <span>Update Password</span>
                       </button>
                     </div>

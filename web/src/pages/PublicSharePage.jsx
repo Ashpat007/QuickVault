@@ -1,120 +1,45 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { 
   KeyRound, 
   Copy, 
   Check, 
+  Sparkles, 
+  Sun, 
+  Moon, 
   Mail, 
   Phone, 
-  Link as LinkIcon, 
-  FileText, 
-  CheckCircle2,
+  Globe, 
+  FileText,
   Lock,
-  RefreshCw,
-  LogOut,
-  FolderHeart,
-  Globe,
-  Sun,
-  Moon,
-  Sparkles,
   ArrowRight,
   HelpCircle,
-  X
+  X,
+  CheckCircle2
 } from 'lucide-react';
 
-function GithubIcon({ size = 20 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
-      <path d="M9 18c-4.51 2-5-2-7-2" />
-    </svg>
-  );
-}
-
-function LinkedinIcon({ size = 20 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
-      <rect x="2" y="9" width="4" height="12" />
-      <circle cx="4" cy="4" r="2" />
-    </svg>
-  );
-}
-
-function PublicEntryRow({ entry, onCopy, copiedId, index }) {
-  const cardRef = useRef(null);
-  const [transformStyle, setTransformStyle] = useState('');
-
-  const handleMouseMove = (e) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-
-    const rotateX = ((y - centerY) / centerY) * -5;
-    const rotateY = ((x - centerX) / centerX) * 5;
-
-    cardRef.current.style.setProperty('--spotlight-x', `${x}px`);
-    cardRef.current.style.setProperty('--spotlight-y', `${y}px`);
-    setTransformStyle(`perspective(1000px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) scale(1.015)`);
-  };
-
-  const handleMouseLeave = () => {
-    setTransformStyle('');
-  };
-
-  const getEntryIcon = (type) => {
-    switch (type) {
-      case 'github': return <GithubIcon size={20} />;
-      case 'linkedin': return <LinkedinIcon size={20} />;
-      case 'email': return <Mail size={20} />;
-      case 'phone': return <Phone size={20} />;
-      case 'link': return <LinkIcon size={20} />;
-      default: return <FileText size={20} />;
-    }
-  };
-
-  return (
-    <div
-      ref={cardRef}
-      className="vault-entry-card-3d"
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      style={{
-        transform: transformStyle,
-        animationDelay: `${index * 0.06}s`
-      }}
-    >
-      {/* Icon Badge */}
-      <div className="entry-icon-badge">
-        {getEntryIcon(entry.entry_type)}
-      </div>
-
-      {/* Label & Value Preview */}
-      <div className="entry-info-container">
-        <div className="entry-title-row">
-          <span className="entry-label-text">{entry.label}</span>
-          <span className="entry-type-tag">{entry.entry_type}</span>
-        </div>
-        <div className="entry-value-preview" title={entry.value}>
-          {entry.value}
-        </div>
-      </div>
-
-      {/* Copy Button */}
-      <button
-        type="button"
-        onClick={() => onCopy(entry)}
-        className={`btn-copy-action ${copiedId === entry.id ? 'copied' : ''}`}
-      >
-        {copiedId === entry.id ? <Check size={16} /> : <Copy size={16} />}
-        <span>{copiedId === entry.id ? 'Copied!' : 'Copy'}</span>
-      </button>
-    </div>
-  );
+function getIconForType(type) {
+  switch (type) {
+    case 'github':
+      return (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/>
+          <path d="M9 18c-4.51 2-5-2-7-2"/>
+        </svg>
+      );
+    case 'linkedin':
+      return (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/>
+          <rect x="2" y="9" width="4" height="12"/>
+          <circle cx="4" cy="4" r="2"/>
+        </svg>
+      );
+    case 'email': return <Mail size={20} />;
+    case 'phone': return <Phone size={20} />;
+    case 'link': return <Globe size={20} />;
+    default: return <FileText size={20} />;
+  }
 }
 
 export function PublicSharePage({ slug }) {
@@ -125,7 +50,7 @@ export function PublicSharePage({ slug }) {
   const [toastMessage, setToastMessage] = useState(null);
   const [isPublicGuideOpen, setIsPublicGuideOpen] = useState(false);
 
-  // Independent Public Theme State ('light' | 'dark')
+  // 100% Isolated Theme for Public Viewers
   const [publicTheme, setPublicTheme] = useState(() => {
     return localStorage.getItem('quickvault_public_theme') || 'light';
   });
@@ -142,8 +67,8 @@ export function PublicSharePage({ slug }) {
   const loadPublicData = async (showLoading = false) => {
     if (showLoading) setLoading(true);
     try {
-      const publicSet = await supabase.sets.fetchPublicSetBySlug(slug);
-      if (!publicSet) {
+      const publicSet = await supabase.sets.fetchSetBySlug(slug);
+      if (!publicSet || !publicSet.is_public) {
         setSet(null);
         setEntries([]);
         return;
@@ -184,9 +109,9 @@ export function PublicSharePage({ slug }) {
     }
   };
 
-  const handleCreateOwnVault = async () => {
-    await supabase.auth.signOut();
-    window.location.href = '/';
+  // Opens Sign Up / Create Vault in a fresh new browser tab!
+  const handleCreateOwnVault = () => {
+    window.open('/', '_blank');
   };
 
   if (loading) {
@@ -253,10 +178,9 @@ export function PublicSharePage({ slug }) {
               type="button"
               onClick={handleCreateOwnVault}
               className="btn-primary-action"
-              style={{ width: '100%', padding: '0.88rem' }}
             >
-              <LogOut size={18} />
-              <span>Go to Sign In / Sign Up Page</span>
+              <span>Create Your Own QuickVault</span>
+              <ArrowRight size={16} />
             </button>
           </div>
         </div>
@@ -269,7 +193,7 @@ export function PublicSharePage({ slug }) {
       {/* Top Navbar */}
       <nav className="navbar-sticky">
         <div className="nav-container">
-          <div className="brand-logo-btn" onClick={() => window.location.href = '/'}>
+          <div className="brand-logo-btn" onClick={() => window.open('/', '_blank')}>
             <div className="brand-icon-box">
               <KeyRound size={22} />
             </div>
@@ -281,6 +205,7 @@ export function PublicSharePage({ slug }) {
               type="button"
               onClick={() => setIsPublicGuideOpen(true)}
               className="nav-btn-icon"
+              title="How This Card Works"
             >
               <HelpCircle size={16} color="var(--coral-accent)" />
               <span>How It Works</span>
@@ -297,35 +222,30 @@ export function PublicSharePage({ slug }) {
 
             <button
               type="button"
-              onClick={() => loadPublicData(true)}
-              className="nav-btn-icon"
-              title="Refresh public entries"
+              onClick={handleCreateOwnVault}
+              className="btn-primary-action"
+              style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
             >
-              <RefreshCw size={14} />
-              <span>Refresh</span>
+              <span>Create Free Vault</span>
+              <ArrowRight size={14} />
             </button>
-
-            <div className="user-badge-pill" style={{ background: 'var(--coral-light)', color: 'var(--coral-text)', borderColor: 'var(--border-strong)' }}>
-              <Globe size={14} color="var(--coral-accent)" />
-              <span>Public Contact Card</span>
-            </div>
           </div>
         </div>
       </nav>
 
-      {/* Main Content Area */}
-      <main className="main-wrapper">
-        {/* Profile Header Bar */}
-        <div className="profile-header-card">
+      {/* Main Public Profile Container */}
+      <main className="main-wrapper" style={{ maxWidth: '680px' }}>
+        {/* Profile Identity Card */}
+        <div className="profile-header-card" style={{ marginBottom: '1.25rem', padding: '1.25rem 1.6rem' }}>
           <div className="profile-info">
-            <div className="profile-avatar-icon">
-              <FolderHeart size={22} />
+            <div className="profile-avatar-icon" style={{ width: '48px', height: '48px', borderRadius: '16px' }}>
+              <KeyRound size={24} />
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <h3 className="profile-title">
-                  {set.name} Profile
-                </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <h2 className="profile-title" style={{ fontSize: '1.4rem' }}>
+                  {set.name} Digital Card
+                </h2>
                 <span style={{
                   fontSize: '0.72rem',
                   fontWeight: 800,
@@ -337,36 +257,83 @@ export function PublicSharePage({ slug }) {
                   alignItems: 'center',
                   gap: '0.25rem'
                 }}>
-                  <Globe size={12} /> PUBLIC SHARE ACTIVE
+                  ● Verified Active
                 </span>
               </div>
-              <p className="profile-subtitle">
-                Tap any item below to copy it to your clipboard
+              <p className="profile-subtitle" style={{ fontSize: '0.88rem', marginTop: '0.2rem' }}>
+                Public Contact Card & Quick-Copy Links
               </p>
             </div>
           </div>
         </div>
 
-        {/* Entries List */}
-        <div>
-          {entries.length === 0 ? (
-            <div className="glass-card" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
-              This public vault currently has no active items.
-            </div>
-          ) : (
-            <div>
-              {entries.map((entry, index) => (
-                <PublicEntryRow
+        {/* Public Items List */}
+        {entries.length === 0 ? (
+          <div className="glass-card" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
+            No public entries are currently shared in this profile.
+          </div>
+        ) : (
+          <div>
+            {entries.map((entry) => {
+              const isCopied = copiedId === entry.id;
+              return (
+                <div
                   key={entry.id}
-                  entry={entry}
-                  index={index}
-                  onCopy={handleCopy}
-                  copiedId={copiedId}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+                  className="vault-entry-card-3d"
+                  style={{
+                    marginBottom: '0.85rem',
+                    background: 'var(--surface-card)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '16px',
+                    padding: '0.95rem 1.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '1rem',
+                    boxShadow: 'var(--shadow-card)'
+                  }}
+                >
+                  <div className="entry-icon-badge">
+                    {getIconForType(entry.entry_type)}
+                  </div>
+
+                  <div className="entry-info-container">
+                    <div className="entry-title-row">
+                      <span className="entry-label-text">{entry.label}</span>
+                      <span className="entry-type-tag">{entry.entry_type || 'link'}</span>
+                    </div>
+
+                    <div className="entry-value-preview" title={entry.value}>
+                      {entry.value}
+                    </div>
+
+                    {entry.note && (
+                      <div style={{
+                        fontSize: '0.74rem',
+                        color: 'var(--text-light)',
+                        marginTop: '0.25rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem'
+                      }}>
+                        <span>💬</span>
+                        <span>{entry.note}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(entry)}
+                    className={`btn-copy-action ${isCopied ? 'copied' : ''}`}
+                  >
+                    {isCopied ? <Check size={14} /> : <Copy size={14} />}
+                    <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Viral Growth CTA Banner: Create Your Own Vault */}
         <div className="glass-card" style={{ 
@@ -378,18 +345,18 @@ export function PublicSharePage({ slug }) {
           boxShadow: 'var(--shadow-hover)'
         }}>
           <div style={{
-            width: '52px',
-            height: '52px',
-            borderRadius: '16px',
-            background: 'linear-gradient(135deg, #FF9A86 0%, #F87D65 100%)',
+            width: '50px',
+            height: '50px',
+            borderRadius: '14px',
+            background: '#FF5900',
             color: '#FFFFFF',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 1rem',
-            boxShadow: '0 6px 20px rgba(248, 125, 101, 0.35)'
+            boxShadow: '0 4px 16px rgba(255, 89, 0, 0.35)'
           }}>
-            <Sparkles size={26} />
+            <Sparkles size={24} />
           </div>
 
           <h3 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '0.45rem' }}>
@@ -417,14 +384,14 @@ export function PublicSharePage({ slug }) {
         <div className="modal-overlay-blur" onClick={() => setIsPublicGuideOpen(false)}>
           <div 
             className="modal-dialog-box" 
-            style={{ maxWidth: '500px' }}
+            style={{ maxWidth: '500px', borderRadius: '22px' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '1.25rem 1.75rem',
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between', 
+              padding: '1.2rem 1.6rem 1rem',
               borderBottom: '1px solid var(--border-subtle)',
               background: 'var(--surface-elevated)'
             }}>
@@ -443,15 +410,15 @@ export function PublicSharePage({ slug }) {
               </button>
             </div>
 
-            <div className="modal-scrollable-body" style={{ padding: '1.5rem 1.75rem' }}>
+            <div style={{ padding: '1.5rem 1.75rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.55 }}>
-                <div style={{ background: 'var(--coral-light)', border: '1px solid var(--border-subtle)', borderRadius: '14px', padding: '1rem' }}>
-                  <strong style={{ color: 'var(--coral-text)', display: 'block', marginBottom: '0.25rem' }}>📋 1. Instant 1-Tap Copying</strong>
+                <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: '14px', padding: '1rem' }}>
+                  <strong style={{ color: 'var(--coral-accent)', display: 'block', marginBottom: '0.25rem' }}>📋 1. Instant 1-Tap Copying</strong>
                   Click the <strong>Copy</strong> button on any item to immediately copy GitHub URLs, LinkedIn handles, work emails, or portfolio links to your clipboard.
                 </div>
 
-                <div style={{ background: 'var(--coral-light)', border: '1px solid var(--border-subtle)', borderRadius: '14px', padding: '1rem' }}>
-                  <strong style={{ color: 'var(--coral-text)', display: 'block', marginBottom: '0.25rem' }}>✨ 2. Create Your Own Card</strong>
+                <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: '14px', padding: '1rem' }}>
+                  <strong style={{ color: 'var(--coral-accent)', display: 'block', marginBottom: '0.25rem' }}>✨ 2. Create Your Own Card</strong>
                   You can build your own digital contact card and QR code in under 30 seconds for free by clicking <strong>Create Your Free QuickVault</strong> below.
                 </div>
               </div>

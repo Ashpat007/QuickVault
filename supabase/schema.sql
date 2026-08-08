@@ -1,72 +1,64 @@
--- QuickVault Postgres Database Schema & RLS Policy Fix for Supabase
+-- QuickVault Master PostgreSQL Schema & Migrations
 
--- 1. Sets Table: Named groupings of entries
-create table if not exists sets (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  name text not null,
-  is_public boolean default false,
-  public_slug text unique,
-  created_at timestamptz default now()
+-- 1. Create Sets (Profiles) Table
+CREATE TABLE IF NOT EXISTS sets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    name TEXT NOT NULL,
+    is_public BOOLEAN DEFAULT false,
+    public_slug TEXT UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 2. Entries Table: Individual vault items
-create table if not exists entries (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  set_id uuid references sets(id) on delete cascade not null,
-  label text not null,
-  value text not null,
-  note text,
-  entry_type text not null,
-  is_private boolean default false,
-  sort_order int default 0,
-  created_at timestamptz default now()
+-- 2. Create Entries Table with P0 Security Default: is_private = true
+CREATE TABLE IF NOT EXISTS entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    set_id UUID REFERENCES sets(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    value TEXT NOT NULL,
+    note TEXT,
+    entry_type TEXT DEFAULT 'text',
+    is_private BOOLEAN DEFAULT true, -- P0 Security Default: Secured by default
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Add note column if table already exists
-alter table entries add column if not exists note text;
+-- 3. Migrations for existing deployments
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS note TEXT;
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS set_id UUID REFERENCES sets(id) ON DELETE CASCADE;
+ALTER TABLE entries ALTER COLUMN is_private SET DEFAULT true;
 
--- Enable RLS
-alter table sets enable row level security;
-alter table entries enable row level security;
+-- 4. Enable Row Level Security (RLS)
+ALTER TABLE sets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE entries ENABLE ROW LEVEL SECURITY;
 
--- Drop existing policies to prevent conflicts
-drop policy if exists "users manage their own sets" on sets;
-drop policy if exists "anyone can read public sets" on sets;
-drop policy if exists "users manage their own entries" on entries;
-drop policy if exists "users manage their own entries" on sets;
-drop policy if exists "anyone can read non-private entries of public sets" on entries;
+-- 5. RLS Policies for Sets
+CREATE POLICY "Users can view their own sets" ON sets
+    FOR SELECT USING (auth.uid() = user_id);
 
--- Sets RLS Policies
-create policy "users manage their own sets"
-  on sets for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+CREATE POLICY "Public sets are viewable by public slug" ON sets
+    FOR SELECT USING (is_public = true);
 
-create policy "anyone can read public sets"
-  on sets for select
-  using (is_public = true);
+CREATE POLICY "Users can insert their own sets" ON sets
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
 
--- Entries RLS Policies (CORRECTED TARGET TO entries TABLE)
-create policy "users manage their own entries"
-  on entries for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+CREATE POLICY "Users can update their own sets" ON sets
+    FOR UPDATE USING (auth.uid() = user_id);
 
-create policy "anyone can read non-private entries of public sets"
-  on entries for select
-  using (
-    (is_private = false or is_private is null)
-    and exists (
-      select 1 from sets
-      where sets.id = entries.set_id
-      and sets.is_public = true
-    )
-  );
+CREATE POLICY "Users can delete their own sets" ON sets
+    FOR DELETE USING (auth.uid() = user_id);
 
--- Indexes for maximum query performance
-create index if not exists idx_sets_user_id on sets(user_id);
-create index if not exists idx_sets_public_slug on sets(public_slug) where is_public = true;
-create index if not exists idx_entries_set_id on entries(set_id);
-create index if not exists idx_entries_user_id on entries(user_id);
+-- 6. RLS Policies for Entries
+CREATE POLICY "Users can manage their own entries" ON entries
+    FOR ALL USING (auth.uid() = user_id);
+
+CREATE POLICY "Public non-private entries viewable for public sets" ON entries
+    FOR SELECT USING (
+        is_private = false AND 
+        EXISTS (
+            SELECT 1 FROM sets 
+            WHERE sets.id = entries.set_id 
+            AND sets.is_public = true
+        )
+    );

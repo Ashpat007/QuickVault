@@ -1,99 +1,127 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 const isConfigured = Boolean(
-  supabaseUrl && 
-  supabaseAnonKey && 
-  !supabaseUrl.includes('your-supabase-project')
+  SUPABASE_URL && 
+  SUPABASE_ANON_KEY && 
+  !SUPABASE_URL.includes('your-project-id') &&
+  !SUPABASE_ANON_KEY.includes('your-anon-key')
 );
 
-// Real Supabase client instance (used when .env credentials exist)
 export const realSupabase = isConfigured 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true
+      }
+    })
   : null;
 
-// LocalStorage Mock fallback for out-of-the-box local testing & validation
-const LOCAL_STORAGE_KEY_SESSION = 'quickvault_demo_session';
-const LOCAL_STORAGE_KEY_SETS = 'quickvault_demo_sets';
-const LOCAL_STORAGE_KEY_ENTRIES = 'quickvault_demo_entries';
+// LocalStorage helpers for offline-first fallback
+const STORAGE_KEYS = {
+  SESSION: 'quickvault_local_session',
+  SETS: 'quickvault_local_sets',
+  ENTRIES: 'quickvault_local_entries'
+};
 
-const getLocalSession = () => {
+function getLocalSession() {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY_SESSION);
+    const raw = localStorage.getItem(STORAGE_KEYS.SESSION);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
-};
+}
 
-const setLocalSession = (session) => {
-  if (session) {
-    localStorage.setItem(LOCAL_STORAGE_KEY_SESSION, JSON.stringify(session));
+function setLocalSession(session) {
+  try {
+    if (session) {
+      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(session));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.SESSION);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function getLocalSets() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SETS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalSets(sets) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.SETS, JSON.stringify(sets));
+  } catch {
+    // ignore
+  }
+}
+
+function getLocalEntries() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ENTRIES);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalEntries(entries) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.ENTRIES, JSON.stringify(entries));
+  } catch {
+    // ignore
+  }
+}
+
+// Cryptographically secure 21-character nanoid generator for non-enumerable slugs
+function generateSlug(prefix = 'share') {
+  const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let randStr = '';
+  const cryptoObj = typeof window !== 'undefined' ? (window.crypto || window.msCrypto) : null;
+  if (cryptoObj && cryptoObj.getRandomValues) {
+    const randomBytes = new Uint8Array(21);
+    cryptoObj.getRandomValues(randomBytes);
+    for (let i = 0; i < 21; i++) {
+      randStr += chars[randomBytes[i] % chars.length];
+    }
   } else {
-    localStorage.removeItem(LOCAL_STORAGE_KEY_SESSION);
+    for (let i = 0; i < 21; i++) {
+      randStr += chars[Math.floor(Math.random() * chars.length)];
+    }
   }
-};
-
-const getLocalSets = () => {
-  try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY_SETS);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-};
-
-const saveLocalSets = (sets) => {
-  localStorage.setItem(LOCAL_STORAGE_KEY_SETS, JSON.stringify(sets));
-};
-
-const getLocalEntries = () => {
-  try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY_ENTRIES);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-};
-
-const saveLocalEntries = (entries) => {
-  localStorage.setItem(LOCAL_STORAGE_KEY_ENTRIES, JSON.stringify(entries));
-};
-
-function generateSlug(prefix = 'vault') {
-  const randomStr = Math.random().toString(36).substring(2, 8);
-  return `${prefix}-${randomStr}`;
+  return `${prefix}-${randStr}`;
 }
 
 export const supabase = {
-  isLocalDemo: !isConfigured,
-
   auth: {
     async getSession() {
       if (isConfigured) {
-        const { data, error } = await realSupabase.auth.getSession();
-        if (error) throw error;
-        return { data };
+        return realSupabase.auth.getSession();
       }
-      const session = getLocalSession();
-      return { data: { session } };
+      return { data: { session: getLocalSession() }, error: null };
     },
 
     onAuthStateChange(callback) {
       if (isConfigured) {
         return realSupabase.auth.onAuthStateChange(callback);
       }
-      const handler = () => {
-        const session = getLocalSession();
-        callback(session ? 'SIGNED_IN' : 'SIGNED_OUT', session);
+      const listener = () => {
+        callback('SIGNED_IN', getLocalSession());
       };
-      window.addEventListener('quickvault-auth-change', handler);
+      window.addEventListener('quickvault-auth-change', listener);
       return {
         data: {
           subscription: {
-            unsubscribe: () => window.removeEventListener('quickvault-auth-change', handler)
+            unsubscribe: () => window.removeEventListener('quickvault-auth-change', listener)
           }
         }
       };
@@ -101,7 +129,13 @@ export const supabase = {
 
     async signUp({ email, password }) {
       if (isConfigured) {
-        const { data, error } = await realSupabase.auth.signUp({ email, password });
+        const { data, error } = await realSupabase.auth.signUp({ 
+          email, 
+          password,
+          options: {
+            emailRedirectTo: window.location.origin
+          }
+        });
         if (error) return { data: null, error };
         return { data, error: null };
       }
@@ -172,7 +206,9 @@ export const supabase = {
 
     async resetPasswordForEmail(email, { redirectTo } = {}) {
       if (isConfigured) {
-        const { data, error } = await realSupabase.auth.resetPasswordForEmail(email, { redirectTo });
+        const { data, error } = await realSupabase.auth.resetPasswordForEmail(email, { 
+          redirectTo: redirectTo || window.location.origin 
+        });
         if (error) return { data: null, error };
         return { data, error: null };
       }
@@ -181,9 +217,7 @@ export const supabase = {
 
     async signOut() {
       if (isConfigured) {
-        const { error } = await realSupabase.auth.signOut();
-        if (error) throw error;
-        return { error: null };
+        await realSupabase.auth.signOut();
       }
       setLocalSession(null);
       window.dispatchEvent(new Event('quickvault-auth-change'));
@@ -193,7 +227,6 @@ export const supabase = {
 
   sets: {
     async fetchUserSets(userId) {
-      let rawSets = [];
       if (isConfigured) {
         const { data, error } = await realSupabase
           .from('sets')
@@ -201,22 +234,27 @@ export const supabase = {
           .eq('user_id', userId)
           .order('created_at', { ascending: true });
         if (error) throw error;
-        rawSets = data || [];
-      } else {
-        rawSets = getLocalSets().filter(s => s.user_id === userId);
+        
+        // Deduplicate sets by case-insensitive name
+        const seenNames = new Set();
+        const deduplicated = (data || []).filter(set => {
+          const lower = set.name.toLowerCase();
+          if (seenNames.has(lower)) return false;
+          seenNames.add(lower);
+          return true;
+        });
+
+        return deduplicated;
       }
 
-      // Deduplicate sets by name (keep the first created instance per name)
-      const uniqueSets = [];
+      const sets = getLocalSets().filter(s => s.user_id === userId);
       const seenNames = new Set();
-      for (const set of rawSets) {
-        const nameKey = set.name.toLowerCase().trim();
-        if (!seenNames.has(nameKey)) {
-          seenNames.add(nameKey);
-          uniqueSets.push(set);
-        }
-      }
-      return uniqueSets;
+      return sets.filter(set => {
+        const lower = set.name.toLowerCase();
+        if (seenNames.has(lower)) return false;
+        seenNames.add(lower);
+        return true;
+      });
     },
 
     async createDefaultSet(userId) {
@@ -224,11 +262,10 @@ export const supabase = {
         const { data: existing } = await realSupabase
           .from('sets')
           .select('*')
-          .eq('user_id', userId);
+          .eq('user_id', userId)
+          .ilike('name', 'Personal');
 
         if (existing && existing.length > 0) {
-          const personal = existing.find(s => s.name.toLowerCase() === 'personal');
-          if (personal) return personal;
           return existing[0];
         }
 
@@ -242,25 +279,29 @@ export const supabase = {
           }])
           .select()
           .single();
-        if (error) throw error;
+
+        if (error) {
+          console.warn('Default set check', error.message);
+          return null;
+        }
         return data;
       }
 
       const sets = getLocalSets();
-      const existing = sets.find(s => s.user_id === userId && s.name.toLowerCase() === 'personal');
-      if (existing) return existing;
-
-      const newSet = {
-        id: `set-${Date.now()}`,
-        user_id: userId,
-        name: 'Personal',
-        is_public: false,
-        public_slug: null,
-        created_at: new Date().toISOString()
-      };
-      sets.push(newSet);
-      saveLocalSets(sets);
-      return newSet;
+      let personal = sets.find(s => s.user_id === userId && s.name.toLowerCase() === 'personal');
+      if (!personal) {
+        personal = {
+          id: `set-${Date.now()}`,
+          user_id: userId,
+          name: 'Personal',
+          is_public: false,
+          public_slug: null,
+          created_at: new Date().toISOString()
+        };
+        sets.push(personal);
+        saveLocalSets(sets);
+      }
+      return personal;
     },
 
     async createSet(userId, name) {
@@ -273,7 +314,6 @@ export const supabase = {
       };
 
       if (isConfigured) {
-        // Check if set with same name already exists
         const { data: existing } = await realSupabase
           .from('sets')
           .select('*')
@@ -339,7 +379,6 @@ export const supabase = {
       sets = sets.filter(s => !(s.id === setId && s.user_id === userId));
       saveLocalSets(sets);
 
-      // Also clean up local entries
       let entries = getLocalEntries();
       entries = entries.filter(e => e.set_id !== setId);
       saveLocalEntries(entries);
@@ -367,7 +406,7 @@ export const supabase = {
 
       const sets = getLocalSets();
       const index = sets.findIndex(s => s.id === setId && s.user_id === userId);
-      if (index === -1) throw new Error('Set not found or permission denied');
+      if (index === -1) throw new Error('Set not found');
 
       sets[index].is_public = makePublic;
       sets[index].public_slug = newSlug;
@@ -375,9 +414,7 @@ export const supabase = {
       return sets[index];
     },
 
-    async fetchPublicSetBySlug(slug) {
-      if (!slug) return null;
-
+    async fetchSetBySlug(slug) {
       if (isConfigured) {
         const { data, error } = await realSupabase
           .from('sets')
@@ -385,13 +422,13 @@ export const supabase = {
           .eq('public_slug', slug)
           .eq('is_public', true)
           .maybeSingle();
-        if (error || !data) return null;
+
+        if (error) throw error;
         return data;
       }
 
       const sets = getLocalSets();
-      const found = sets.find(s => s.public_slug === slug && s.is_public === true);
-      return found || null;
+      return sets.find(s => s.public_slug === slug && s.is_public) || null;
     }
   },
 
@@ -403,8 +440,7 @@ export const supabase = {
           .select('*')
           .eq('set_id', setId)
           .eq('user_id', userId)
-          .order('sort_order', { ascending: true })
-          .order('created_at', { ascending: true });
+          .order('sort_order', { ascending: true });
         if (error) throw error;
         return data;
       }
@@ -421,7 +457,7 @@ export const supabase = {
           .from('entries')
           .select('*')
           .eq('set_id', setId)
-          .or('is_private.is.null,is_private.eq.false')
+          .eq('is_private', false)
           .order('sort_order', { ascending: true });
         if (error) throw error;
         return data;
@@ -433,7 +469,8 @@ export const supabase = {
       return entries;
     },
 
-    async createEntry({ userId, setId, label, value, note = '', entryType, isPrivate = false, sortOrder = 0 }) {
+    // P0 Security Fix: Default isPrivate to true on every new entry
+    async createEntry({ userId, setId, label, value, note = '', entryType, isPrivate = true, sortOrder = 0 }) {
       const payload = {
         user_id: userId,
         set_id: setId,
@@ -453,8 +490,13 @@ export const supabase = {
           .single();
 
         if (error) {
-          // Fallback if 'note' column doesn't exist yet on remote Supabase DB
+          // Explicit warning on missing remote schema column instead of silent data loss
           if (error.message && error.message.includes("Could not find the 'note' column")) {
+            console.warn('[QuickVault Schema Warning] Remote Supabase database is missing the "note" column. Please execute schema migration.');
+            window.dispatchEvent(new CustomEvent('quickvault-note-sync-warning', {
+              detail: 'Notice: Entry saved, but your remote database schema is missing the "note" column. Please run schema.sql migration.'
+            }));
+
             delete payload.note;
             const { data: retryData, error: retryError } = await realSupabase
               .from('entries')
@@ -480,11 +522,19 @@ export const supabase = {
       return newEntry;
     },
 
-    async updateEntry(id, userId, updates) {
+    async updateEntry({ id, userId, label, value, note = '', entryType, isPrivate = true }) {
+      const payload = {
+        label,
+        value,
+        note: note ? note.trim() : null,
+        entry_type: entryType,
+        is_private: isPrivate
+      };
+
       if (isConfigured) {
         const { data, error } = await realSupabase
           .from('entries')
-          .update(updates)
+          .update(payload)
           .eq('id', id)
           .eq('user_id', userId)
           .select()
@@ -492,11 +542,11 @@ export const supabase = {
 
         if (error) {
           if (error.message && error.message.includes("Could not find the 'note' column")) {
-            const copyUpdates = { ...updates };
-            delete copyUpdates.note;
+            console.warn('[QuickVault Schema Warning] Remote Supabase database is missing the "note" column.');
+            delete payload.note;
             const { data: retryData, error: retryError } = await realSupabase
               .from('entries')
-              .update(copyUpdates)
+              .update(payload)
               .eq('id', id)
               .eq('user_id', userId)
               .select()
@@ -511,19 +561,19 @@ export const supabase = {
 
       const entries = getLocalEntries();
       const index = entries.findIndex(e => e.id === id && e.user_id === userId);
-      if (index === -1) throw new Error('Entry not found or access denied');
+      if (index === -1) throw new Error('Entry not found');
 
-      entries[index] = { ...entries[index], ...updates };
+      entries[index] = { ...entries[index], ...payload };
       saveLocalEntries(entries);
       return entries[index];
     },
 
-    async moveEntryToSet(id, userId, targetSetId) {
+    async moveEntryToSet(entryId, userId, targetSetId) {
       if (isConfigured) {
         const { data, error } = await realSupabase
           .from('entries')
           .update({ set_id: targetSetId })
-          .eq('id', id)
+          .eq('id', entryId)
           .eq('user_id', userId)
           .select()
           .single();
@@ -532,11 +582,43 @@ export const supabase = {
       }
 
       const entries = getLocalEntries();
-      const index = entries.findIndex(e => e.id === id && e.user_id === userId);
+      const index = entries.findIndex(e => e.id === entryId && e.user_id === userId);
       if (index === -1) throw new Error('Entry not found');
       entries[index].set_id = targetSetId;
       saveLocalEntries(entries);
       return entries[index];
+    },
+
+    async reorderEntries(userId, reorderedEntries) {
+      if (isConfigured) {
+        const updates = reorderedEntries.map((entry, index) => ({
+          id: entry.id,
+          user_id: userId,
+          set_id: entry.set_id,
+          label: entry.label,
+          value: entry.value,
+          note: entry.note || null,
+          entry_type: entry.entry_type,
+          is_private: entry.is_private,
+          sort_order: index
+        }));
+
+        const { error } = await realSupabase
+          .from('entries')
+          .upsert(updates, { onConflict: 'id' });
+        if (error) throw error;
+        return true;
+      }
+
+      const localEntries = getLocalEntries();
+      reorderedEntries.forEach((reordered, index) => {
+        const found = localEntries.find(e => e.id === reordered.id);
+        if (found) {
+          found.sort_order = index;
+        }
+      });
+      saveLocalEntries(localEntries);
+      return true;
     },
 
     async deleteEntry(id, userId) {
@@ -552,30 +634,6 @@ export const supabase = {
 
       let entries = getLocalEntries();
       entries = entries.filter(e => !(e.id === id && e.user_id === userId));
-      saveLocalEntries(entries);
-      return true;
-    },
-
-    async updateSortOrders(userId, orderedEntries) {
-      if (isConfigured) {
-        for (let i = 0; i < orderedEntries.length; i++) {
-          const item = orderedEntries[i];
-          await realSupabase
-            .from('entries')
-            .update({ sort_order: i })
-            .eq('id', item.id)
-            .eq('user_id', userId);
-        }
-        return true;
-      }
-
-      const entries = getLocalEntries();
-      orderedEntries.forEach((item, index) => {
-        const found = entries.find(e => e.id === item.id && e.user_id === userId);
-        if (found) {
-          found.sort_order = index;
-        }
-      });
       saveLocalEntries(entries);
       return true;
     }

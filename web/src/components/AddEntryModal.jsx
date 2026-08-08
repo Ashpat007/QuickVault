@@ -36,7 +36,8 @@ export function AddEntryModal({ isOpen, onClose, onSave, editingEntry = null }) 
   const [note, setNote] = useState('');
   const [entryType, setEntryType] = useState('text');
   const [detectedTypeName, setDetectedTypeName] = useState('');
-  const [isPrivate, setIsPrivate] = useState(false);
+  // P0 Security Fix: Default is_private to true on every new entry!
+  const [isPrivate, setIsPrivate] = useState(true);
   const [autoDetected, setAutoDetected] = useState(false);
   const [passwordWarning, setPasswordWarning] = useState(null);
   const [userOverrodeLabel, setUserOverrodeLabel] = useState(false);
@@ -60,18 +61,18 @@ export function AddEntryModal({ isOpen, onClose, onSave, editingEntry = null }) 
       setLabel(editingEntry.label || '');
       setNote(editingEntry.note || '');
       setEntryType(editingEntry.entry_type || 'text');
-      setDetectedTypeName('');
-      setIsPrivate(Boolean(editingEntry.is_private));
-      setPasswordWarning(detectPasswordRisk(editingEntry.value));
+      setIsPrivate(editingEntry.is_private !== undefined ? editingEntry.is_private : true);
       setUserOverrodeLabel(true);
       setUserOverrodeType(true);
+      setAutoDetected(false);
     } else {
       setValue('');
       setLabel('');
       setNote('');
       setEntryType('text');
       setDetectedTypeName('');
-      setIsPrivate(false);
+      // P0 Security Fix: Default to true for new entries
+      setIsPrivate(true);
       setAutoDetected(false);
       setPasswordWarning(null);
       setUserOverrodeLabel(false);
@@ -80,47 +81,34 @@ export function AddEntryModal({ isOpen, onClose, onSave, editingEntry = null }) 
   }, [editingEntry, isOpen]);
 
   const handleValueChange = (e) => {
-    const val = e.target.value;
-    setValue(val);
+    const rawVal = e.target.value;
+    setValue(rawVal);
 
-    const warning = detectPasswordRisk(val);
+    const warning = detectPasswordRisk(rawVal);
     setPasswordWarning(warning);
 
-    if (warning) {
-      if (!userOverrodeLabel) {
-        setLabel('');
+    if (rawVal.trim() && !userOverrodeType) {
+      const detection = detectEntryType(rawVal);
+      setEntryType(detection.type);
+      setDetectedTypeName(detection.label);
+      setAutoDetected(true);
+
+      if (!userOverrodeLabel && (!label || label === detectedTypeName || label === 'GitHub Profile' || label === 'LinkedIn Handle' || label === 'Email Address' || label === 'Phone Number' || label === 'Web Link')) {
+        setLabel(detection.label);
       }
-      setAutoDetected(false);
-      return;
-    }
-
-    const { entryType: detectedType, suggestedLabel } = detectEntryType(val);
-    const matchedOpt = TYPE_DOCK_OPTIONS.find(o => o.id === detectedType);
-    setDetectedTypeName(matchedOpt ? matchedOpt.label : detectedType);
-
-    if (!userOverrodeType) {
-      setEntryType(detectedType);
-    }
-
-    if (!userOverrodeLabel || !label) {
-      if (suggestedLabel) {
-        setLabel(suggestedLabel);
-        setAutoDetected(true);
-      } else {
+    } else if (!rawVal.trim()) {
+      if (!userOverrodeType) {
+        setEntryType('text');
+        setDetectedTypeName('');
         setAutoDetected(false);
       }
     }
   };
 
-  const handleTypeSelect = (typeId) => {
+  const handleSelectDockType = (typeId) => {
     setEntryType(typeId);
     setUserOverrodeType(true);
     setAutoDetected(false);
-  };
-
-  const handleLabelChange = (e) => {
-    setLabel(e.target.value);
-    setUserOverrodeLabel(true);
   };
 
   const handleSubmit = (e) => {
@@ -129,236 +117,286 @@ export function AddEntryModal({ isOpen, onClose, onSave, editingEntry = null }) 
 
     onSave({
       id: editingEntry?.id,
-      label: label.trim(),
       value: value.trim(),
-      note: note.trim(),
+      label: label.trim(),
+      note: note.trim() || null,
       entry_type: entryType,
       is_private: isPrivate
     });
+
     onClose();
   };
-
-  const selectedOption = TYPE_DOCK_OPTIONS.find(opt => opt.id === entryType) || TYPE_DOCK_OPTIONS[5];
 
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay-blur">
-      <div className="modal-dialog-box" style={{ maxWidth: '520px', borderRadius: '22px' }}>
+    <div className="modal-overlay-blur" onClick={onClose}>
+      <div 
+        className="modal-dialog-box" 
+        style={{ maxWidth: '540px' }}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
           justifyContent: 'space-between', 
-          padding: '1.2rem 1.75rem 1rem',
+          padding: '1.2rem 1.6rem 1rem',
           borderBottom: '1px solid var(--border-subtle)',
           background: 'var(--surface-elevated)'
         }}>
-          <h3 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-main)' }}>
-            {editingEntry ? 'Edit Vault Entry' : 'Add New Vault Entry'}
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              background: '#FF5900',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {editingEntry ? <Save size={18} /> : <Plus size={18} />}
+            </div>
+            <div>
+              <h3 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.28rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.03em' }}>
+                {editingEntry ? 'Edit Vault Entry' : 'Add New Quick-Copy Entry'}
+              </h3>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-light)', fontWeight: 500 }}>
+                {editingEntry ? 'Update existing item properties' : 'Auto-detected & optimized for 1-tap clipboard copying'}
+              </span>
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={onClose}
             className="icon-action-button"
             style={{ padding: '0.4rem' }}
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
-        {/* Form Body */}
-        <div style={{ padding: '1.4rem 1.75rem' }}>
-          <form onSubmit={handleSubmit}>
-            {/* Step 1: Value Input */}
-            <div style={{ marginBottom: '1.1rem' }}>
-              <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-                Paste Link / Handle / Snippet
-              </label>
-              <textarea
-                rows={2}
-                required
-                className="modern-input"
-                style={{ 
-                  resize: 'none', 
-                  padding: '0.7rem 0.9rem',
-                  fontSize: '0.88rem',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  borderColor: passwordWarning ? '#EB3B5A' : undefined
-                }}
-                placeholder="e.g. github.com/username, user@email.com, or portfolio.dev"
-                value={value}
-                onChange={handleValueChange}
-              />
-
-              {autoDetected && !editingEntry && !passwordWarning && !userOverrodeType && (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  fontSize: '0.78rem',
-                  color: 'var(--coral-text)',
-                  fontWeight: 700,
-                  marginTop: '0.3rem'
-                }}>
-                  <Sparkles size={14} />
-                  <span>Auto-detected as <strong>{detectedTypeName}</strong></span>
-                </div>
-              )}
-
-              {passwordWarning && (
-                <div style={{
-                  background: '#FFEBEB',
-                  border: '1.5px solid #FFC2C2',
-                  borderLeft: '4px solid #EB3B5A',
-                  color: '#C0392B',
-                  padding: '0.75rem 1rem',
-                  borderRadius: '12px',
-                  fontSize: '0.84rem',
-                  fontWeight: 600,
-                  marginTop: '0.5rem',
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '0.55rem',
-                  lineHeight: 1.45
-                }}>
-                  <AlertOctagon size={18} style={{ flexShrink: 0, marginTop: '2px', color: '#EB3B5A' }} />
-                  <div>{passwordWarning}</div>
-                </div>
-              )}
-            </div>
-
-            {/* Step 2: Label Name & Note */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-                  Label Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  className="modern-input"
-                  style={{ padding: '0.65rem 0.85rem', fontSize: '0.88rem' }}
-                  placeholder="e.g. GitHub Profile"
-                  value={label}
-                  onChange={handleLabelChange}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-                  Note / Message <span style={{ fontWeight: 400, color: 'var(--text-light)' }}>(Optional)</span>
-                </label>
-                <input
-                  type="text"
-                  className="modern-input"
-                  style={{ padding: '0.65rem 0.85rem', fontSize: '0.88rem' }}
-                  placeholder="e.g. My primary open-source repo"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Step 3: Interactive Floating Symbol Dock Bar */}
-            <div style={{ marginBottom: '1.25rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                  Type Symbol
-                </label>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--coral-text)' }}>
-                  {selectedOption.label} {userOverrodeType ? '(Custom)' : ''}
-                </span>
-              </div>
-
-              {/* Floating Dock Bar Container */}
-              <div style={{
-                background: 'var(--tab-bar-bg)',
-                border: '1.5px solid var(--border-subtle)',
-                borderRadius: '16px',
-                padding: '4px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '4px'
-              }}>
-                {TYPE_DOCK_OPTIONS.map((opt) => {
-                  const IconComp = opt.icon;
-                  const isSelected = entryType === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => handleTypeSelect(opt.id)}
-                      title={opt.label}
-                      style={{
-                        flex: 1,
-                        height: '40px',
-                        borderRadius: '12px',
-                        border: 'none',
-                        background: isSelected ? 'var(--surface-elevated)' : 'transparent',
-                        color: isSelected ? 'var(--coral-accent)' : 'var(--text-light)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                        boxShadow: isSelected ? 'var(--shadow-card)' : 'none',
-                        transform: isSelected ? 'scale(1.06)' : 'scale(1)'
-                      }}
-                    >
-                      <IconComp size={18} />
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Granular Privacy Checkbox */}
+        {/* Modal Body */}
+        <form onSubmit={handleSubmit} style={{ padding: '1.35rem 1.6rem' }}>
+          
+          {/* Password Security Warning Box */}
+          {passwordWarning && (
             <div style={{
-              background: 'var(--coral-light)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '14px',
-              padding: '0.7rem 1rem',
-              marginBottom: '1.4rem',
+              background: '#FFF5F5',
+              border: '1.5px solid #FEB2B2',
+              borderRadius: '12px',
+              padding: '0.75rem 0.95rem',
+              marginBottom: '1rem',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0.65rem'
+            }}>
+              <AlertOctagon size={18} color="#E53E3E" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div>
+                <strong style={{ display: 'block', fontSize: '0.82rem', color: '#9B2C2C', fontWeight: 800, marginBottom: '2px' }}>
+                  {passwordWarning.title}
+                </strong>
+                <p style={{ fontSize: '0.78rem', color: '#C53030', lineHeight: 1.4 }}>
+                  {passwordWarning.message}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Value / Link Input */}
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+              Paste Value / URL / Snippet <span style={{ color: '#FF5900' }}>*</span>
+            </label>
+            <input
+              type="text"
+              required
+              autoFocus
+              className="modern-input"
+              placeholder="e.g. github.com/username, https://portfolio.dev, user@example.com"
+              value={value}
+              onChange={handleValueChange}
+            />
+          </div>
+
+          {/* Segmented Floating Icon Dock Bar */}
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                Type Symbol
+              </label>
+              {autoDetected && !userOverrodeType && (
+                <span style={{
+                  fontSize: '0.7rem',
+                  fontWeight: 800,
+                  color: '#FF5900',
+                  background: '#FFF0E6',
+                  padding: '0.15rem 0.5rem',
+                  borderRadius: '9999px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.25rem'
+                }}>
+                  <Sparkles size={11} /> Auto-Detected ({detectedTypeName})
+                </span>
+              )}
+              {userOverrodeType && (
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-light)', fontWeight: 600 }}>
+                  (Custom Selection)
+                </span>
+              )}
+            </div>
+
+            {/* Single-row Segmented Floating Dock Bar */}
+            <div style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '0.6rem'
+              justifyContent: 'space-between',
+              gap: '0.35rem',
+              background: 'var(--surface-elevated)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '14px',
+              padding: '0.3rem',
+              overflowX: 'auto',
+              scrollbarWidth: 'none'
             }}>
-              <input
-                type="checkbox"
-                id="isPrivateCheck"
-                checked={isPrivate}
-                onChange={(e) => setIsPrivate(e.target.checked)}
-                style={{ width: '17px', height: '17px', accentColor: 'var(--coral-accent)', cursor: 'pointer' }}
-              />
-              <label htmlFor="isPrivateCheck" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Lock size={14} color="var(--coral-text)" />
-                <span>Keep Private (Hide from public QR / Share link)</span>
-              </label>
+              {TYPE_DOCK_OPTIONS.map((opt) => {
+                const Icon = opt.icon;
+                const isSelected = entryType === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => handleSelectDockType(opt.id)}
+                    title={opt.label}
+                    style={{
+                      flex: 1,
+                      minWidth: '60px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.2rem',
+                      padding: '0.45rem 0.25rem',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: isSelected ? '#FF5900' : 'transparent',
+                      color: isSelected ? '#FFFFFF' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      fontWeight: isSelected ? 800 : 600,
+                      boxShadow: isSelected ? '0 2px 8px rgba(255, 89, 0, 0.25)' : 'none'
+                    }}
+                  >
+                    <Icon size={16} />
+                    <span style={{ fontSize: '0.66rem', whiteSpace: 'nowrap' }}>
+                      {opt.id === 'github' ? 'GitHub' :
+                       opt.id === 'linkedin' ? 'LinkedIn' :
+                       opt.id === 'email' ? 'Email' :
+                       opt.id === 'phone' ? 'Phone' :
+                       opt.id === 'link' ? 'Web Link' : 'Snippet'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Label Input */}
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+              Display Label <span style={{ color: '#FF5900' }}>*</span>
+            </label>
+            <input
+              type="text"
+              required
+              className="modern-input"
+              placeholder="e.g. GitHub Profile, Resume PDF, Work Contact"
+              value={label}
+              onChange={(e) => {
+                setLabel(e.target.value);
+                setUserOverrodeLabel(true);
+              }}
+            />
+          </div>
+
+          {/* Optional Note / Message Field */}
+          <div style={{ marginBottom: '1.2rem' }}>
+            <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
+              Optional Note / Description <span style={{ fontSize: '0.74rem', color: 'var(--text-light)', fontWeight: 500 }}>(e.g. "College handle", "Personal contact")</span>
+            </label>
+            <input
+              type="text"
+              className="modern-input"
+              placeholder="Add optional context or subtitle..."
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </div>
+
+          {/* Privacy Toggle — P0 Security Default: is_private: true */}
+          <div style={{
+            background: 'var(--surface-elevated)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '12px',
+            padding: '0.75rem 0.95rem',
+            marginBottom: '1.4rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <div style={{
+                width: '30px',
+                height: '30px',
+                borderRadius: '8px',
+                background: isPrivate ? '#FFF0E6' : 'var(--surface-card)',
+                color: isPrivate ? '#FF5900' : 'var(--text-light)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Lock size={15} />
+              </div>
+              <div>
+                <strong style={{ fontSize: '0.84rem', display: 'block', color: 'var(--text-main)' }}>
+                  Keep Private <span style={{ fontSize: '0.7rem', color: '#10B981', fontWeight: 700 }}>(Default Secured)</span>
+                </strong>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                  {isPrivate ? 'Hidden from public QR & shared link cards' : 'Visible on public QR & shared link cards'}
+                </span>
+              </div>
             </div>
 
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: '0.65rem', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={onClose}
-                className="btn-secondary-action"
-                style={{ padding: '0.6rem 1.2rem', fontSize: '0.86rem' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn-primary-action"
-                style={{ padding: '0.6rem 1.35rem', fontSize: '0.86rem' }}
-              >
-                {editingEntry ? <Save size={16} /> : <Plus size={16} />}
-                <span>{editingEntry ? 'Save Changes' : 'Add Entry'}</span>
-              </button>
-            </div>
-          </form>
-        </div>
+            <input
+              type="checkbox"
+              id="isPrivateCheckbox"
+              checked={isPrivate}
+              onChange={(e) => setIsPrivate(e.target.checked)}
+              style={{ width: '18px', height: '18px', accentColor: '#FF5900', cursor: 'pointer' }}
+            />
+          </div>
+
+          {/* Footer Action Buttons */}
+          <div style={{ display: 'flex', gap: '0.65rem', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-secondary-action"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-primary-action"
+            >
+              <Save size={15} />
+              <span>{editingEntry ? 'Update Entry' : 'Save to QuickVault'}</span>
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
