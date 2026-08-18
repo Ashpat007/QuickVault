@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // Synchronous session initialization to eliminate flash
+  // 1. Session state with guaranteed localStorage persistence
   const [session, setSession] = useState(() => {
     try {
       const raw = localStorage.getItem('quickvault_local_session');
@@ -44,12 +44,25 @@ export default function App() {
     }
   });
 
+  useEffect(() => {
+    try {
+      if (session) {
+        localStorage.setItem('quickvault_local_session', JSON.stringify(session));
+      } else {
+        localStorage.removeItem('quickvault_local_session');
+      }
+    } catch {
+      // ignore
+    }
+  }, [session]);
+
+  // 2. Profile Sets state with guaranteed localStorage persistence
   const [userSets, setUserSets] = useState(() => {
     try {
       const raw = localStorage.getItem('quickvault_local_sets');
-      return raw ? JSON.parse(raw) : [];
+      return raw ? JSON.parse(raw) : [{ id: 'set-personal', name: 'Personal', is_public: false, public_slug: null, view_count: 0 }];
     } catch {
-      return [];
+      return [{ id: 'set-personal', name: 'Personal', is_public: false, public_slug: null, view_count: 0 }];
     }
   });
 
@@ -57,14 +70,23 @@ export default function App() {
     try {
       const raw = localStorage.getItem('quickvault_local_sets');
       const sets = raw ? JSON.parse(raw) : [];
-      return sets && sets.length > 0 ? sets[0] : null;
+      return sets && sets.length > 0 ? sets[0] : { id: 'set-personal', name: 'Personal', is_public: false, public_slug: null, view_count: 0 };
     } catch {
-      return null;
+      return { id: 'set-personal', name: 'Personal', is_public: false, public_slug: null, view_count: 0 };
+    }
+  });
+
+  // 3. Vault Entries (Single Source of Truth)
+  const [entries, setEntries] = useState(() => {
+    try {
+      const raw = localStorage.getItem('quickvault_local_entries');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
     }
   });
 
   const [loading, setLoading] = useState(false);
-  const [entries, setEntries] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
@@ -126,7 +148,7 @@ export default function App() {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
-  // ⚡ Global Alt + 1..3 & Ctrl + K hotkeys
+  // Global Alt + 1..3 & Ctrl + K hotkeys
   useEffect(() => {
     const handleKeyDown = async (e) => {
       const activeEl = document.activeElement;
@@ -163,6 +185,18 @@ export default function App() {
   const shareMatch = pathname.match(/^\/share\/([\w-]+)/);
   const publicSlug = shareMatch ? shareMatch[1] : null;
 
+  const refreshVaultData = async (activeSet = currentSet, user = session?.user) => {
+    const uid = user?.id || 'local-user';
+    const setId = activeSet?.id || 'set-personal';
+    try {
+      const data = await supabase.entries.fetchEntries(setId, uid);
+      setEntries(data || []);
+      syncWithExtension(userSets, data || []);
+    } catch (err) {
+      console.warn('Refresh vault data error', err);
+    }
+  };
+
   useEffect(() => {
     if (publicSlug) {
       setLoading(false);
@@ -170,26 +204,12 @@ export default function App() {
     }
 
     let isSubscribed = true;
-    const hasAuthToken = window.location.hash.includes('access_token') || window.location.search.includes('code');
-    const isRecoveryFlow = window.location.hash.includes('type=recovery') || window.location.search.includes('type=recovery');
 
     supabase.auth.getSession().then(({ data }) => {
       if (!isSubscribed) return;
-      const currentSession = data?.session || null;
-      setSession(currentSession);
+      const currentSession = data?.session || session;
       if (currentSession) {
-        if (isRecoveryFlow) {
-          setIsResetPasswordModalOpen(true);
-          setToastMessage('🔑 Password recovery verified. Choose a new password below!');
-        } else if (hasAuthToken) {
-          setToastMessage('🎉 Email verified successfully! Welcome to QuickVault.');
-        }
-        if (hasAuthToken || isRecoveryFlow) {
-          setTimeout(() => setToastMessage(null), 3500);
-          if (window.location.hash || window.location.search) {
-            window.history.replaceState(null, '', window.location.pathname);
-          }
-        }
+        setSession(currentSession);
         initSetsAndData(currentSession.user.id, false);
       } else {
         setLoading(false);
@@ -198,25 +218,9 @@ export default function App() {
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, newSession) => {
       if (!isSubscribed) return;
-      setSession(newSession);
-
       if (newSession) {
-        if (event === 'PASSWORD_RECOVERY' || isRecoveryFlow) {
-          setIsResetPasswordModalOpen(true);
-          setToastMessage('🔑 Password recovery verified. Choose a new password below!');
-          setTimeout(() => setToastMessage(null), 3500);
-        } else if (event === 'SIGNED_IN' && hasAuthToken) {
-          setToastMessage('🎉 Logged into QuickVault.');
-          setTimeout(() => setToastMessage(null), 3500);
-        }
-        if (window.location.hash || window.location.search) {
-          window.history.replaceState(null, '', window.location.pathname);
-        }
+        setSession(newSession);
         initSetsAndData(newSession.user.id, false);
-      } else {
-        setCurrentSet(null);
-        setUserSets([]);
-        setLoading(false);
       }
     });
 
@@ -254,9 +258,10 @@ export default function App() {
 
   const handleSelectSet = async (set) => {
     setCurrentSet(set);
-    if (session && set?.id) {
+    const uid = session?.user?.id || 'local-user';
+    if (set?.id) {
       try {
-        const data = await supabase.entries.fetchEntries(set.id, session.user.id);
+        const data = await supabase.entries.fetchEntries(set.id, uid);
         setEntries(data || []);
         syncWithExtension(userSets, data || []);
       } catch (err) {
@@ -266,10 +271,10 @@ export default function App() {
   };
 
   const handleCreateSet = async (name) => {
-    if (!session) return;
+    const uid = session?.user?.id || 'local-user';
     try {
-      const newSet = await supabase.sets.createSet(session.user.id, name);
-      const updatedSets = await supabase.sets.fetchUserSets(session.user.id);
+      const newSet = await supabase.sets.createSet(uid, name);
+      const updatedSets = await supabase.sets.fetchUserSets(uid);
       setUserSets(updatedSets);
       handleSelectSet(newSet);
       setToastMessage(`Created new profile "${newSet.name}"`);
@@ -280,10 +285,10 @@ export default function App() {
   };
 
   const handleRenameSet = async (setId, newName) => {
-    if (!session) return;
+    const uid = session?.user?.id || 'local-user';
     try {
-      const updatedSet = await supabase.sets.renameSet(setId, session.user.id, newName);
-      const updatedSets = await supabase.sets.fetchUserSets(session.user.id);
+      const updatedSet = await supabase.sets.renameSet(setId, uid, newName);
+      const updatedSets = await supabase.sets.fetchUserSets(uid);
       setUserSets(updatedSets);
       if (currentSet?.id === setId) {
         setCurrentSet(updatedSet);
@@ -296,10 +301,10 @@ export default function App() {
   };
 
   const handleDeleteSet = async (setId) => {
-    if (!session) return;
+    const uid = session?.user?.id || 'local-user';
     try {
-      await supabase.sets.deleteSet(setId, session.user.id);
-      const updatedSets = await supabase.sets.fetchUserSets(session.user.id);
+      await supabase.sets.deleteSet(setId, uid);
+      const updatedSets = await supabase.sets.fetchUserSets(uid);
       setUserSets(updatedSets);
       if (updatedSets.length > 0) {
         handleSelectSet(updatedSets[0]);
@@ -313,13 +318,16 @@ export default function App() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+    setSession(null);
+    localStorage.removeItem('quickvault_local_session');
   };
 
   const handleToggleShare = async (makePublic) => {
-    if (!currentSet || !session) return;
-    const updatedSet = await supabase.sets.toggleShareMode(currentSet.id, session.user.id, makePublic);
+    if (!currentSet) return;
+    const uid = session?.user?.id || 'local-user';
+    const updatedSet = await supabase.sets.toggleShareMode(currentSet.id, uid, makePublic);
     setCurrentSet(updatedSet);
-    const updatedSets = await supabase.sets.fetchUserSets(session.user.id);
+    const updatedSets = await supabase.sets.fetchUserSets(uid);
     setUserSets(updatedSets);
   };
 
@@ -456,12 +464,16 @@ export default function App() {
             Initializing QuickVault...
           </div>
         ) : !session ? (
-          <Auth onAuthSuccess={(newSession) => setSession(newSession)} />
+          <Auth onAuthSuccess={(newSession) => {
+            setSession(newSession);
+            localStorage.setItem('quickvault_local_session', JSON.stringify(newSession));
+            initSetsAndData(newSession?.user?.id || 'local-user', false);
+          }} />
         ) : (
           <div>
-            {/* UNIFIED COMMAND DECK: Profiles + Quick Actions + Search in One Clean Card */}
+            {/* UNIFIED COMMAND DECK */}
             <div className="command-deck-container">
-              {/* Row 1: Profile Selector Tabs (Left) & Quick Action Buttons (Right) */}
+              {/* Row 1: Profile Selector Tabs & Actions */}
               <div className="deck-top-row">
                 <SetSwitcher
                   sets={userSets}
@@ -498,14 +510,13 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Row 2: Active Profile Meta, Status Pill, and Analytics Metrics */}
+              {/* Row 2: Active Profile Meta & Analytics */}
               <div className="deck-meta-row">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
                   <strong style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.05rem', color: 'var(--text-main)' }}>
                     {currentSet?.name || 'Personal'} Vault
                   </strong>
 
-                  {/* Public Status Pill */}
                   {currentSet?.is_public ? (
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
                       <span 
@@ -565,7 +576,6 @@ export default function App() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  {/* Live Analytics Pill */}
                   <span style={{
                     fontSize: '0.74rem',
                     fontWeight: 700,
@@ -604,7 +614,6 @@ export default function App() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
 
-                {/* Clear Search & Counter badge */}
                 <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   {searchQuery && (
                     <button
@@ -630,21 +639,19 @@ export default function App() {
               </div>
             </div>
 
-            {/* Vault List for current set with breathing room */}
+            {/* Vault List */}
             <VaultList 
               session={session} 
               currentSet={currentSet} 
               availableSets={userSets}
+              entries={entries}
               searchQuery={searchQuery}
               onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
               isModalOpen={isModalOpen}
               setIsModalOpen={setIsModalOpen}
               editingEntry={editingEntry}
               setEditingEntry={setEditingEntry}
-              onEntriesLoaded={(loadedEntries) => {
-                setEntries(loadedEntries || []);
-                syncWithExtension(userSets, loadedEntries || []);
-              }}
+              onRefreshEntries={() => refreshVaultData(currentSet, session?.user)}
             />
 
             {/* Share / QR Modal */}

@@ -1,54 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { EntryRow } from './EntryRow';
 import { AddEntryModal } from './AddEntryModal';
 import { EmptyState } from './EmptyState';
-import { ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { ShieldAlert, CheckCircle2, Info } from 'lucide-react';
 
 export function VaultList({ 
   session, 
   currentSet, 
   availableSets = [], 
+  entries = [],
   searchQuery = '',
   onOpenCommandPalette, 
   isModalOpen,
   setIsModalOpen,
   editingEntry,
   setEditingEntry,
-  onEntriesLoaded 
+  onRefreshEntries 
 }) {
-  const [entries, setEntries] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  const userId = session?.user?.id;
-
-  const loadEntries = async (showLoading = false) => {
-    const activeSetId = currentSet?.id || (availableSets && availableSets[0]?.id);
-    if (!activeSetId || !userId) {
-      setLoading(false);
-      return;
-    }
-    if (showLoading) setLoading(true);
-    setErrorMessage(null);
-    try {
-      const data = await supabase.entries.fetchEntries(activeSetId, userId);
-      const safeData = data || [];
-      setEntries(safeData);
-      if (onEntriesLoaded) {
-        onEntriesLoaded(safeData);
-      }
-    } catch (err) {
-      setErrorMessage('Failed to load vault entries: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadEntries(false);
-  }, [currentSet?.id, userId]);
+  const userId = session?.user?.id || 'local-user';
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -58,19 +31,7 @@ export function VaultList({
   const handleSaveEntry = async (entryData) => {
     try {
       setErrorMessage(null);
-      let targetSetId = currentSet?.id || (availableSets && availableSets[0]?.id);
-      
-      if (!targetSetId && userId) {
-        let defSet = await supabase.sets.createDefaultSet(userId);
-        if (!defSet) {
-          defSet = await supabase.sets.createSet(userId, 'Personal');
-        }
-        targetSetId = defSet?.id;
-      }
-
-      if (!targetSetId) {
-        targetSetId = `set-${Date.now()}`;
-      }
+      let targetSetId = currentSet?.id || (availableSets && availableSets[0]?.id) || 'set-personal';
 
       if (entryData.id) {
         await supabase.entries.updateEntry({
@@ -97,7 +58,9 @@ export function VaultList({
         });
         showToast('New entry added to vault');
       }
-      await loadEntries(false);
+      if (onRefreshEntries) {
+        await onRefreshEntries();
+      }
     } catch (err) {
       setErrorMessage('Failed to save entry: ' + err.message);
     }
@@ -108,7 +71,9 @@ export function VaultList({
     try {
       await supabase.entries.deleteEntry(entryId, userId);
       showToast('Entry deleted');
-      await loadEntries(false);
+      if (onRefreshEntries) {
+        await onRefreshEntries();
+      }
     } catch (err) {
       setErrorMessage('Failed to delete entry: ' + err.message);
     }
@@ -119,7 +84,9 @@ export function VaultList({
       await supabase.entries.moveEntryToSet(entryId, userId, targetSetId);
       const targetSet = availableSets.find(s => s.id === targetSetId);
       showToast(`Moved entry to "${targetSet?.name || 'Target'}" profile`);
-      await loadEntries(false);
+      if (onRefreshEntries) {
+        await onRefreshEntries();
+      }
     } catch (err) {
       setErrorMessage('Failed to move entry: ' + err.message);
     }
@@ -133,13 +100,13 @@ export function VaultList({
     const [movedItem] = newEntries.splice(index, 1);
     newEntries.splice(targetIndex, 0, movedItem);
 
-    setEntries(newEntries);
-    if (onEntriesLoaded) onEntriesLoaded(newEntries);
     try {
       await supabase.entries.reorderEntries(userId, newEntries);
+      if (onRefreshEntries) {
+        await onRefreshEntries();
+      }
     } catch (err) {
       console.error('Failed to reorder entries', err);
-      loadEntries(false);
     }
   };
 
@@ -153,6 +120,8 @@ export function VaultList({
       (e.note && e.note.toLowerCase().includes(q))
     );
   });
+
+  const allArePrivate = entries.length > 0 && entries.every(e => e.is_private);
 
   return (
     <div style={{ marginTop: '0.5rem' }}>
@@ -173,12 +142,29 @@ export function VaultList({
         </div>
       )}
 
-      {/* Loading vs Empty vs Entries list */}
-      {loading ? (
-        <div className="glass-card" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
-          Loading your vault...
+      {/* Helpful Hint if Profile is Public but All Entries are Private */}
+      {currentSet?.is_public && allArePrivate && (
+        <div style={{
+          background: 'rgba(255, 130, 55, 0.12)',
+          border: '1px solid rgba(255, 130, 55, 0.3)',
+          color: 'var(--text-main)',
+          padding: '0.75rem 1rem',
+          borderRadius: '14px',
+          fontSize: '0.84rem',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }}>
+          <Info size={16} color="#FF5900" style={{ flexShrink: 0 }} />
+          <span>
+            <strong>Note for Public Share:</strong> All {entries.length} items below are currently marked <code>Private Only</code>. Edit an item and uncheck <strong>Keep Private</strong> to make it visible on your digital share link!
+          </span>
         </div>
-      ) : entries.length === 0 ? (
+      )}
+
+      {/* Empty vs Entries List */}
+      {entries.length === 0 ? (
         <EmptyState onAddFirstEntry={() => {
           if (setEditingEntry) setEditingEntry(null);
           if (setIsModalOpen) setIsModalOpen(true);
