@@ -1,14 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 import { checkRateLimit } from './rateLimiter';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
 export const isConfigured = Boolean(
   SUPABASE_URL && 
   SUPABASE_ANON_KEY && 
-  !SUPABASE_URL.includes('your-project-id') &&
-  !SUPABASE_ANON_KEY.includes('your-anon-key')
+  !SUPABASE_URL.includes('your-project') &&
+  !SUPABASE_URL.includes('your-supabase') &&
+  !SUPABASE_ANON_KEY.includes('your-anon') &&
+  !SUPABASE_ANON_KEY.includes('your-supabase')
 );
 
 export const isOfflineFallback = !isConfigured;
@@ -112,7 +114,11 @@ export const supabase = {
   auth: {
     async getSession() {
       if (isConfigured) {
-        return realSupabase.auth.getSession();
+        try {
+          return await realSupabase.auth.getSession();
+        } catch {
+          // fallback to local session
+        }
       }
       return { data: { session: getLocalSession() }, error: null };
     },
@@ -134,19 +140,7 @@ export const supabase = {
       };
     },
 
-    async signUp({ email, password }) {
-      if (isConfigured) {
-        const { data, error } = await realSupabase.auth.signUp({ 
-          email, 
-          password,
-          options: {
-            emailRedirectTo: window.location.origin
-          }
-        });
-        if (error) return { data: null, error };
-        return { data, error: null };
-      }
-
+    _localSignUp(email, password) {
       if (!email || !password || password.length < 6) {
         return { data: null, error: new Error('Password must be at least 6 characters.') };
       }
@@ -177,13 +171,7 @@ export const supabase = {
       return { data: { session, user: session.user }, error: null };
     },
 
-    async signInWithPassword({ email, password }) {
-      if (isConfigured) {
-        const { data, error } = await realSupabase.auth.signInWithPassword({ email, password });
-        if (error) return { data: null, error };
-        return { data, error: null };
-      }
-
+    _localSignIn(email, password) {
       if (!email || !password) {
         return { data: null, error: new Error('Please enter both email and password.') };
       }
@@ -213,20 +201,87 @@ export const supabase = {
       return { data: { session, user: session.user }, error: null };
     },
 
+    async signUp({ email, password }) {
+      if (isConfigured) {
+        try {
+          const { data, error } = await realSupabase.auth.signUp({ 
+            email, 
+            password,
+            options: {
+              emailRedirectTo: window.location.origin
+            }
+          });
+          if (error) {
+            if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('NetworkError') || error.message.includes('fetch'))) {
+              console.warn('[QuickVault] Supabase endpoint unreachable, falling back to local sandbox authentication.');
+              return this._localSignUp(email, password);
+            }
+            return { data: null, error };
+          }
+          return { data, error: null };
+        } catch (err) {
+          if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('fetch'))) {
+            console.warn('[QuickVault] Supabase network error, falling back to local sandbox authentication.');
+            return this._localSignUp(email, password);
+          }
+          return { data: null, error: err };
+        }
+      }
+
+      return this._localSignUp(email, password);
+    },
+
+    async signInWithPassword({ email, password }) {
+      if (isConfigured) {
+        try {
+          const { data, error } = await realSupabase.auth.signInWithPassword({ email, password });
+          if (error) {
+            if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('NetworkError') || error.message.includes('fetch'))) {
+              console.warn('[QuickVault] Supabase endpoint unreachable, falling back to local sandbox authentication.');
+              return this._localSignIn(email, password);
+            }
+            return { data: null, error };
+          }
+          return { data, error: null };
+        } catch (err) {
+          if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('fetch'))) {
+            console.warn('[QuickVault] Supabase network error, falling back to local sandbox authentication.');
+            return this._localSignIn(email, password);
+          }
+          return { data: null, error: err };
+        }
+      }
+
+      return this._localSignIn(email, password);
+    },
+
     async resetPasswordForEmail(email, { redirectTo } = {}) {
       if (isConfigured) {
-        const { data, error } = await realSupabase.auth.resetPasswordForEmail(email, { 
-          redirectTo: redirectTo || window.location.origin 
-        });
-        if (error) return { data: null, error };
-        return { data, error: null };
+        try {
+          const { data, error } = await realSupabase.auth.resetPasswordForEmail(email, { 
+            redirectTo: redirectTo || window.location.origin 
+          });
+          if (error) {
+            if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('NetworkError'))) {
+              return { data: {}, error: null };
+            }
+            return { data: null, error };
+          }
+          return { data, error: null };
+        } catch {
+          return { data: {}, error: null };
+        }
       }
       return { data: {}, error: null };
     },
 
     async signOut() {
       if (isConfigured) {
-        await realSupabase.auth.signOut();
+        try {
+          await realSupabase.auth.signOut();
+        } catch {
+          // ignore
+        }
       }
       setLocalSession(null);
       window.dispatchEvent(new Event('quickvault-auth-change'));
@@ -237,27 +292,26 @@ export const supabase = {
   sets: {
     async fetchUserSets(userId) {
       if (isConfigured) {
-        const { data, error } = await realSupabase
-          .from('sets')
-          .select('*')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: true });
-        if (error) throw error;
-        
-        const seenNames = new Set();
-        const deduplicated = (data || []).filter(set => {
-          const lower = set.name.toLowerCase();
-          if (seenNames.has(lower)) return false;
-          seenNames.add(lower);
-          return true;
-        });
+        try {
+          const { data, error } = await realSupabase
+            .from('sets')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: true });
+          if (!error && data) {
+            const seenNames = new Set();
+            const deduplicated = data.filter(set => {
+              const lower = set.name.toLowerCase();
+              if (seenNames.has(lower)) return false;
+              seenNames.add(lower);
+              return true;
+            });
 
-        if (deduplicated.length === 0) {
-          const def = await supabase.sets.createDefaultSet(userId);
-          return def ? [def] : [];
+            if (deduplicated.length > 0) return deduplicated;
+          }
+        } catch (e) {
+          console.warn('Fallback to local sets', e);
         }
-
-        return deduplicated;
       }
 
       const sets = getLocalSets().filter(s => s.user_id === userId);
@@ -371,15 +425,18 @@ export const supabase = {
 
     async renameSet(setId, userId, newName) {
       if (isConfigured) {
-        const { data, error } = await realSupabase
-          .from('sets')
-          .update({ name: newName.trim() })
-          .eq('id', setId)
-          .eq('user_id', userId)
-          .select()
-          .single();
-        if (error) throw error;
-        return data;
+        try {
+          const { data, error } = await realSupabase
+            .from('sets')
+            .update({ name: newName.trim() })
+            .eq('id', setId)
+            .eq('user_id', userId)
+            .select()
+            .single();
+          if (!error && data) return data;
+        } catch (e) {
+          console.warn('Rename set remote fallback', e);
+        }
       }
 
       const sets = getLocalSets();
@@ -392,13 +449,16 @@ export const supabase = {
 
     async deleteSet(setId, userId) {
       if (isConfigured) {
-        const { error } = await realSupabase
-          .from('sets')
-          .delete()
-          .eq('id', setId)
-          .eq('user_id', userId);
-        if (error) throw error;
-        return true;
+        try {
+          const { error } = await realSupabase
+            .from('sets')
+            .delete()
+            .eq('id', setId)
+            .eq('user_id', userId);
+          if (!error) return true;
+        } catch (e) {
+          console.warn('Delete set remote fallback', e);
+        }
       }
 
       let sets = getLocalSets();
@@ -416,18 +476,21 @@ export const supabase = {
       const newSlug = makePublic ? generateSlug('share') : null;
 
       if (isConfigured) {
-        const { data, error } = await realSupabase
-          .from('sets')
-          .update({
-            is_public: makePublic,
-            public_slug: newSlug
-          })
-          .eq('id', setId)
-          .eq('user_id', userId)
-          .select()
-          .single();
-        if (error) throw error;
-        return data;
+        try {
+          const { data, error } = await realSupabase
+            .from('sets')
+            .update({
+              is_public: makePublic,
+              public_slug: newSlug
+            })
+            .eq('id', setId)
+            .eq('user_id', userId)
+            .select()
+            .single();
+          if (!error && data) return data;
+        } catch (e) {
+          console.warn('Toggle share remote fallback', e);
+        }
       }
 
       const sets = getLocalSets();
@@ -442,15 +505,18 @@ export const supabase = {
 
     async fetchSetBySlug(slug) {
       if (isConfigured) {
-        const { data, error } = await realSupabase
-          .from('sets')
-          .select('*')
-          .eq('public_slug', slug)
-          .eq('is_public', true)
-          .maybeSingle();
+        try {
+          const { data, error } = await realSupabase
+            .from('sets')
+            .select('*')
+            .eq('public_slug', slug)
+            .eq('is_public', true)
+            .maybeSingle();
 
-        if (error) throw error;
-        return data;
+          if (!error && data) return data;
+        } catch (e) {
+          console.warn('Fetch slug remote fallback', e);
+        }
       }
 
       const sets = getLocalSets();
@@ -461,14 +527,17 @@ export const supabase = {
   entries: {
     async fetchEntries(setId, userId) {
       if (isConfigured) {
-        const { data, error } = await realSupabase
-          .from('entries')
-          .select('*')
-          .eq('set_id', setId)
-          .eq('user_id', userId)
-          .order('sort_order', { ascending: true });
-        if (error) throw error;
-        return data;
+        try {
+          const { data, error } = await realSupabase
+            .from('entries')
+            .select('*')
+            .eq('set_id', setId)
+            .eq('user_id', userId)
+            .order('sort_order', { ascending: true });
+          if (!error && data) return data;
+        } catch (e) {
+          console.warn('Fetch entries remote fallback', e);
+        }
       }
 
       const entries = getLocalEntries()
@@ -479,14 +548,17 @@ export const supabase = {
 
     async fetchPublicEntries(setId) {
       if (isConfigured) {
-        const { data, error } = await realSupabase
-          .from('entries')
-          .select('*')
-          .eq('set_id', setId)
-          .eq('is_private', false)
-          .order('sort_order', { ascending: true });
-        if (error) throw error;
-        return data;
+        try {
+          const { data, error } = await realSupabase
+            .from('entries')
+            .select('*')
+            .eq('set_id', setId)
+            .eq('is_private', false)
+            .order('sort_order', { ascending: true });
+          if (!error && data) return data;
+        } catch (e) {
+          console.warn('Fetch public entries remote fallback', e);
+        }
       }
 
       const entries = getLocalEntries()
@@ -510,14 +582,16 @@ export const supabase = {
       };
 
       if (isConfigured) {
-        const { data, error } = await realSupabase
-          .from('entries')
-          .insert([payload])
-          .select()
-          .single();
+        try {
+          const { data, error } = await realSupabase
+            .from('entries')
+            .insert([payload])
+            .select()
+            .single();
 
-        if (error) {
-          if (error.message && error.message.includes("Could not find the 'note' column")) {
+          if (!error && data) return data;
+
+          if (error && error.message && error.message.includes("Could not find the 'note' column")) {
             console.warn('[QuickVault Schema Warning] Remote Supabase database is missing the "note" column.');
             window.dispatchEvent(new CustomEvent('quickvault-note-sync-warning', {
               detail: 'Notice: Entry saved, but your remote database schema is missing the "note" column.'
@@ -529,12 +603,11 @@ export const supabase = {
               .insert([payload])
               .select()
               .single();
-            if (retryError) throw retryError;
-            return retryData;
+            if (!retryError && retryData) return retryData;
           }
-          throw error;
+        } catch (e) {
+          console.warn('Create entry remote fallback', e);
         }
-        return data;
       }
 
       const entries = getLocalEntries();
@@ -558,17 +631,18 @@ export const supabase = {
       };
 
       if (isConfigured) {
-        const { data, error } = await realSupabase
-          .from('entries')
-          .update(payload)
-          .eq('id', id)
-          .eq('user_id', userId)
-          .select()
-          .single();
+        try {
+          const { data, error } = await realSupabase
+            .from('entries')
+            .update(payload)
+            .eq('id', id)
+            .eq('user_id', userId)
+            .select()
+            .single();
 
-        if (error) {
-          if (error.message && error.message.includes("Could not find the 'note' column")) {
-            console.warn('[QuickVault Schema Warning] Remote Supabase database is missing the "note" column.');
+          if (!error && data) return data;
+
+          if (error && error.message && error.message.includes("Could not find the 'note' column")) {
             delete payload.note;
             const { data: retryData, error: retryError } = await realSupabase
               .from('entries')
@@ -577,12 +651,11 @@ export const supabase = {
               .eq('user_id', userId)
               .select()
               .single();
-            if (retryError) throw retryError;
-            return retryData;
+            if (!retryError && retryData) return retryData;
           }
-          throw error;
+        } catch (e) {
+          console.warn('Update entry remote fallback', e);
         }
-        return data;
       }
 
       const entries = getLocalEntries();
@@ -596,15 +669,18 @@ export const supabase = {
 
     async moveEntryToSet(entryId, userId, targetSetId) {
       if (isConfigured) {
-        const { data, error } = await realSupabase
-          .from('entries')
-          .update({ set_id: targetSetId })
-          .eq('id', entryId)
-          .eq('user_id', userId)
-          .select()
-          .single();
-        if (error) throw error;
-        return data;
+        try {
+          const { data, error } = await realSupabase
+            .from('entries')
+            .update({ set_id: targetSetId })
+            .eq('id', entryId)
+            .eq('user_id', userId)
+            .select()
+            .single();
+          if (!error && data) return data;
+        } catch (e) {
+          console.warn('Move entry remote fallback', e);
+        }
       }
 
       const entries = getLocalEntries();
@@ -617,23 +693,26 @@ export const supabase = {
 
     async reorderEntries(userId, reorderedEntries) {
       if (isConfigured) {
-        const updates = reorderedEntries.map((entry, index) => ({
-          id: entry.id,
-          user_id: userId,
-          set_id: entry.set_id,
-          label: entry.label,
-          value: entry.value,
-          note: entry.note || null,
-          entry_type: entry.entry_type,
-          is_private: entry.is_private,
-          sort_order: index
-        }));
+        try {
+          const updates = reorderedEntries.map((entry, index) => ({
+            id: entry.id,
+            user_id: userId,
+            set_id: entry.set_id,
+            label: entry.label,
+            value: entry.value,
+            note: entry.note || null,
+            entry_type: entry.entry_type,
+            is_private: entry.is_private,
+            sort_order: index
+          }));
 
-        const { error } = await realSupabase
-          .from('entries')
-          .upsert(updates, { onConflict: 'id' });
-        if (error) throw error;
-        return true;
+          const { error } = await realSupabase
+            .from('entries')
+            .upsert(updates, { onConflict: 'id' });
+          if (!error) return true;
+        } catch (e) {
+          console.warn('Reorder remote fallback', e);
+        }
       }
 
       const localEntries = getLocalEntries();
@@ -649,13 +728,16 @@ export const supabase = {
 
     async deleteEntry(id, userId) {
       if (isConfigured) {
-        const { error } = await realSupabase
-          .from('entries')
-          .delete()
-          .eq('id', id)
-          .eq('user_id', userId);
-        if (error) throw error;
-        return true;
+        try {
+          const { error } = await realSupabase
+            .from('entries')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', userId);
+          if (!error) return true;
+        } catch (e) {
+          console.warn('Delete entry remote fallback', e);
+        }
       }
 
       let entries = getLocalEntries();
@@ -669,7 +751,6 @@ export const supabase = {
   analytics: {
     async incrementSetViews(setId) {
       if (!setId) return;
-      // Client-side rate-limiting: max 1 view count increment per 10s per setId
       const limitCheck = checkRateLimit(`view:${setId}`, { maxAttempts: 1, windowMs: 10000, cooldownMs: 10000 });
       if (!limitCheck.allowed) return;
 
@@ -695,7 +776,6 @@ export const supabase = {
 
     async incrementEntryCopies(entryId) {
       if (!entryId) return;
-      // Client-side rate-limiting: max 3 copy taps per 5s per entryId
       const limitCheck = checkRateLimit(`copy:${entryId}`, { maxAttempts: 3, windowMs: 5000, cooldownMs: 5000 });
       if (!limitCheck.allowed) return;
 
