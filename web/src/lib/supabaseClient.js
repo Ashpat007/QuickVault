@@ -153,7 +153,7 @@ export const supabase = {
       setLocalSession(session);
 
       const sets = getLocalSets();
-      if (!sets.some(s => s.user_id === mockUserId && s.name === 'Personal')) {
+      if (!sets.some(s => s.name === 'Personal')) {
         const personalSet = {
           id: `set-${Date.now()}`,
           user_id: mockUserId,
@@ -184,7 +184,7 @@ export const supabase = {
       setLocalSession(session);
 
       const sets = getLocalSets();
-      if (!sets.some(s => s.user_id === mockUserId && s.name === 'Personal')) {
+      if (!sets.some(s => s.name === 'Personal')) {
         sets.push({
           id: `set-${Date.now()}`,
           user_id: mockUserId,
@@ -298,26 +298,25 @@ export const supabase = {
             .select('*')
             .eq('user_id', userId)
             .order('created_at', { ascending: true });
-          if (!error && data) {
+          if (!error && data && data.length > 0) {
             const seenNames = new Set();
-            const deduplicated = data.filter(set => {
+            return data.filter(set => {
               const lower = set.name.toLowerCase();
               if (seenNames.has(lower)) return false;
               seenNames.add(lower);
               return true;
             });
-
-            if (deduplicated.length > 0) return deduplicated;
           }
         } catch (e) {
           console.warn('Fallback to local sets', e);
         }
       }
 
-      const sets = getLocalSets().filter(s => s.user_id === userId);
+      const sets = getLocalSets();
+      const userSets = sets.filter(s => !userId || s.user_id === userId || !s.user_id);
       const seenNames = new Set();
-      const localDeduplicated = sets.filter(set => {
-        const lower = set.name.toLowerCase();
+      const localDeduplicated = (userSets.length > 0 ? userSets : sets).filter(set => {
+        const lower = (set.name || '').toLowerCase();
         if (seenNames.has(lower)) return false;
         seenNames.add(lower);
         return true;
@@ -363,11 +362,11 @@ export const supabase = {
       }
 
       const sets = getLocalSets();
-      let personal = sets.find(s => s.user_id === userId && s.name.toLowerCase() === 'personal');
+      let personal = sets.find(s => (s.user_id === userId || !s.user_id) && s.name.toLowerCase() === 'personal');
       if (!personal) {
         personal = {
-          id: `set-${Date.now()}`,
-          user_id: userId,
+          id: `set-personal-${Date.now()}`,
+          user_id: userId || 'local-user',
           name: 'Personal',
           is_public: false,
           public_slug: null,
@@ -383,7 +382,7 @@ export const supabase = {
     async createSet(userId, name) {
       const trimmedName = (name || 'Personal').trim();
       const payload = {
-        user_id: userId,
+        user_id: userId || 'local-user',
         name: trimmedName,
         is_public: false,
         public_slug: null,
@@ -414,7 +413,7 @@ export const supabase = {
       }
 
       const sets = getLocalSets();
-      const existing = sets.find(s => s.user_id === userId && s.name.toLowerCase() === trimmedName.toLowerCase());
+      const existing = sets.find(s => (s.user_id === userId || !s.user_id) && s.name.toLowerCase() === trimmedName.toLowerCase());
       if (existing) return existing;
 
       const newSet = { ...payload, id: `set-${Date.now()}`, created_at: new Date().toISOString() };
@@ -440,7 +439,7 @@ export const supabase = {
       }
 
       const sets = getLocalSets();
-      const index = sets.findIndex(s => s.id === setId && s.user_id === userId);
+      const index = sets.findIndex(s => s.id === setId);
       if (index === -1) throw new Error('Set not found');
       sets[index].name = newName.trim();
       saveLocalSets(sets);
@@ -462,7 +461,7 @@ export const supabase = {
       }
 
       let sets = getLocalSets();
-      sets = sets.filter(s => !(s.id === setId && s.user_id === userId));
+      sets = sets.filter(s => s.id !== setId);
       saveLocalSets(sets);
 
       let entries = getLocalEntries();
@@ -494,8 +493,21 @@ export const supabase = {
       }
 
       const sets = getLocalSets();
-      const index = sets.findIndex(s => s.id === setId && s.user_id === userId);
-      if (index === -1) throw new Error('Set not found');
+      const index = sets.findIndex(s => s.id === setId);
+      if (index === -1) {
+        // Create if missing
+        const newSet = {
+          id: setId || `set-${Date.now()}`,
+          user_id: userId || 'local-user',
+          name: 'Personal',
+          is_public: makePublic,
+          public_slug: newSlug,
+          view_count: 0
+        };
+        sets.push(newSet);
+        saveLocalSets(sets);
+        return newSet;
+      }
 
       sets[index].is_public = makePublic;
       sets[index].public_slug = newSlug;
@@ -540,10 +552,10 @@ export const supabase = {
         }
       }
 
-      const entries = getLocalEntries()
-        .filter(e => e.set_id === setId && e.user_id === userId)
+      const entries = getLocalEntries();
+      return entries
+        .filter(e => !setId || e.set_id === setId || !e.set_id)
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-      return entries;
     },
 
     async fetchPublicEntries(setId) {
@@ -561,17 +573,16 @@ export const supabase = {
         }
       }
 
-      const entries = getLocalEntries()
-        .filter(e => e.set_id === setId && !e.is_private)
+      const entries = getLocalEntries();
+      return entries
+        .filter(e => (!setId || e.set_id === setId || !e.set_id) && !e.is_private)
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-      return entries;
     },
 
-    // P0 Security Fix: Default isPrivate to true on every new entry
     async createEntry({ userId, setId, label, value, note = '', entryType, isPrivate = true, sortOrder = 0 }) {
       const payload = {
-        user_id: userId,
-        set_id: setId,
+        user_id: userId || 'local-user',
+        set_id: setId || 'set-personal',
         label,
         value,
         note: note ? note.trim() : null,
@@ -592,11 +603,6 @@ export const supabase = {
           if (!error && data) return data;
 
           if (error && error.message && error.message.includes("Could not find the 'note' column")) {
-            console.warn('[QuickVault Schema Warning] Remote Supabase database is missing the "note" column.');
-            window.dispatchEvent(new CustomEvent('quickvault-note-sync-warning', {
-              detail: 'Notice: Entry saved, but your remote database schema is missing the "note" column.'
-            }));
-
             delete payload.note;
             const { data: retryData, error: retryError } = await realSupabase
               .from('entries')
@@ -659,7 +665,7 @@ export const supabase = {
       }
 
       const entries = getLocalEntries();
-      const index = entries.findIndex(e => e.id === id && e.user_id === userId);
+      const index = entries.findIndex(e => e.id === id);
       if (index === -1) throw new Error('Entry not found');
 
       entries[index] = { ...entries[index], ...payload };
@@ -684,7 +690,7 @@ export const supabase = {
       }
 
       const entries = getLocalEntries();
-      const index = entries.findIndex(e => e.id === entryId && e.user_id === userId);
+      const index = entries.findIndex(e => e.id === entryId);
       if (index === -1) throw new Error('Entry not found');
       entries[index].set_id = targetSetId;
       saveLocalEntries(entries);
@@ -741,13 +747,12 @@ export const supabase = {
       }
 
       let entries = getLocalEntries();
-      entries = entries.filter(e => !(e.id === id && e.user_id === userId));
+      entries = entries.filter(e => e.id !== id);
       saveLocalEntries(entries);
       return true;
     }
   },
 
-  // 1. 📊 Public Card Analytics & Tap Tracking with Rate-Limiting
   analytics: {
     async incrementSetViews(setId) {
       if (!setId) return;
@@ -800,7 +805,6 @@ export const supabase = {
     }
   },
 
-  // 2. 💾 1-Click Vault Backup (JSON & CSV Export/Import)
   backup: {
     async exportVaultToJson(userId) {
       const sets = await supabase.sets.fetchUserSets(userId);
