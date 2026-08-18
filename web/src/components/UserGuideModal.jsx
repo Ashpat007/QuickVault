@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { X, Copy, Sparkles, QrCode, ShieldCheck, MousePointer, HelpCircle, CheckCircle2 } from 'lucide-react';
+import { isConfigured } from '../lib/supabaseClient';
+import { X, Copy, Sparkles, QrCode, ShieldCheck, MousePointer, HelpCircle, CheckCircle2, Database, Cloud } from 'lucide-react';
 
 export function UserGuideModal({ isOpen, onClose }) {
   useEffect(() => {
@@ -49,7 +50,7 @@ export function UserGuideModal({ isOpen, onClose }) {
                 How QuickVault Works
               </h3>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-light)', fontWeight: 500 }}>
-                Complete User & Security Guide
+                Complete User, Privacy & Security Guide
               </span>
             </div>
           </div>
@@ -68,6 +69,29 @@ export function UserGuideModal({ isOpen, onClose }) {
         <div style={{ padding: '1.4rem 1.6rem', maxHeight: '72vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             
+            {/* Storage Status Pill */}
+            <div style={{
+              background: isConfigured ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 130, 55, 0.12)',
+              border: `1px solid ${isConfigured ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 130, 55, 0.3)'}`,
+              borderRadius: '14px',
+              padding: '0.75rem 1rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.5rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                {isConfigured ? <Cloud size={16} color="#10B981" /> : <Database size={16} color="#FF8237" />}
+                <strong style={{ fontSize: '0.84rem', color: isConfigured ? '#059669' : '#C2410C' }}>
+                  {isConfigured ? 'Cloud Sync Mode (Supabase Connected)' : 'Local Storage Mode (Browser Sandbox)'}
+                </strong>
+              </div>
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                {isConfigured ? 'Multi-device cloud synced' : 'Saved locally in this browser'}
+              </span>
+            </div>
+
             {/* Section 1 */}
             <div style={{ 
               background: 'var(--surface-card)', 
@@ -78,10 +102,10 @@ export function UserGuideModal({ isOpen, onClose }) {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.35rem', color: '#FF5900', fontWeight: 800, fontSize: '0.95rem' }}>
                 <Copy size={16} />
-                <span>1. One-Tap Copy UX</span>
+                <span>1. One-Tap Copy & Hotkeys</span>
               </div>
               <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.55 }}>
-                QuickVault is built to eliminate the friction of hunting down your GitHub link, portfolio, LinkedIn handle, email, or bio snippet. Clicking <strong>Copy</strong> instantly copies the exact value to your clipboard without opening extra menus.
+                Clicking <strong>Copy</strong> on any item copies it instantly without opening submenus. You can also press <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--surface-elevated)', padding: '2px 6px', borderRadius: '4px' }}>Alt + 1</code>, <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--surface-elevated)', padding: '2px 6px', borderRadius: '4px' }}>Alt + 2</code>, or <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--surface-elevated)', padding: '2px 6px', borderRadius: '4px' }}>Alt + 3</code> anywhere to copy your top primary links without touching your mouse.
               </p>
             </div>
 
@@ -95,10 +119,10 @@ export function UserGuideModal({ isOpen, onClose }) {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.35rem', color: '#FF5900', fontWeight: 800, fontSize: '0.95rem' }}>
                 <Sparkles size={16} />
-                <span>2. Smart Entry Typing</span>
+                <span>2. Smart Pattern Auto-Detection</span>
               </div>
               <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.55 }}>
-                When you paste any URL or text snippet, QuickVault automatically recognizes patterns:
+                Pasting any link automatically extracts the type and suggested label:
               </p>
               <ul style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginLeft: '1.2rem', marginTop: '0.35rem', lineHeight: 1.6 }}>
                 <li><strong>GitHub</strong>: <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--surface-elevated)', padding: '2px 6px', borderRadius: '4px' }}>github.com/username</code> → auto-labeled & matched to GitHub icon.</li>
@@ -121,10 +145,11 @@ export function UserGuideModal({ isOpen, onClose }) {
                 <span>3. QR & Public Share Mode (Digital Business Card)</span>
               </div>
               <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.55 }}>
-                Click <strong>Make Shareable</strong> on any profile set to generate a public link and QR code. You can download the QR code as a high-res image.
+                Click <strong>Make Shareable</strong> on any profile set to generate a public link and QR code.
               </p>
               <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.4rem', lineHeight: 1.5 }}>
-                • <strong>Privacy Control</strong>: Check <code style={{ background: 'var(--surface-elevated)', padding: '2px 6px', borderRadius: '4px' }}>🔒 Keep Private</code> on individual items so they stay hidden even when the profile is public.<br />
+                • <strong>P0 Security Default</strong>: Every new item defaults to <code style={{ background: 'var(--surface-elevated)', padding: '2px 6px', borderRadius: '4px' }}>🔒 Keep Private</code>. You must explicitly opt-in each link you want public.<br />
+                • <strong>Cryptographic Non-Enumerable Slugs</strong>: Share URLs use 21-character cryptographically random slugs (over 10<sup>37</sup> combinations) that cannot be guessed or scanned.<br />
                 • <strong>Instant Revocation</strong>: Click <strong>Stop Sharing</strong> anytime to immediately break the link and return a revoked screen.
               </div>
             </div>
@@ -139,10 +164,10 @@ export function UserGuideModal({ isOpen, onClose }) {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.35rem', color: '#FF5900', fontWeight: 800, fontSize: '0.95rem' }}>
                 <MousePointer size={16} />
-                <span>4. Browser Extension Integration</span>
+                <span>4. Browser Extension & Context Menus</span>
               </div>
               <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.55 }}>
-                With the QuickVault browser extension installed, you can <strong>right-click any input field on any website</strong> or click the toolbar extension icon to paste your saved links directly without opening the web app tab!
+                With the QuickVault Chrome extension, you can search and 1-tap copy all your vault links right from your browser toolbar or right-click any webpage input to paste links without switching tabs.
               </p>
             </div>
 
@@ -159,7 +184,7 @@ export function UserGuideModal({ isOpen, onClose }) {
                 <span>5. Non-Password Policy & Security</span>
               </div>
               <p style={{ fontSize: '0.84rem', color: '#9B2C2C', lineHeight: 1.5 }}>
-                QuickVault is explicitly designed for non-sensitive links, handles, and text snippets. <strong>Never store account passwords, bank credentials, or API secret keys in QuickVault.</strong>
+                QuickVault is explicitly designed for public & semi-public links, handles, and text snippets. <strong>Never store account passwords, bank credentials, or API secret keys in QuickVault.</strong>
               </p>
             </div>
 

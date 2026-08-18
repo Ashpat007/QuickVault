@@ -1,14 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
+import { checkRateLimit } from './rateLimiter';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-const isConfigured = Boolean(
+export const isConfigured = Boolean(
   SUPABASE_URL && 
   SUPABASE_ANON_KEY && 
   !SUPABASE_URL.includes('your-project-id') &&
   !SUPABASE_ANON_KEY.includes('your-anon-key')
 );
+
+export const isOfflineFallback = !isConfigured;
 
 export const realSupabase = isConfigured 
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -82,8 +85,11 @@ function saveLocalEntries(entries) {
   }
 }
 
-// Cryptographically secure 21-character nanoid generator for non-enumerable slugs
-function generateSlug(prefix = 'share') {
+/**
+ * Cryptographically secure 21-character base62 nanoid generator for non-enumerable slugs.
+ * Produces 62^21 ~ 4.39e37 permutations, rendering brute-force enumeration statistically impossible.
+ */
+export function generateSlug(prefix = 'share') {
   const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
   let randStr = '';
   const cryptoObj = typeof window !== 'undefined' ? (window.crypto || window.msCrypto) : null;
@@ -94,6 +100,7 @@ function generateSlug(prefix = 'share') {
       randStr += chars[randomBytes[i] % chars.length];
     }
   } else {
+    // Fallback for Node/test environments
     for (let i = 0; i < 21; i++) {
       randStr += chars[Math.floor(Math.random() * chars.length)];
     }
@@ -658,9 +665,14 @@ export const supabase = {
     }
   },
 
-  // 1. 📊 Public Card Analytics & Tap Tracking
+  // 1. 📊 Public Card Analytics & Tap Tracking with Rate-Limiting
   analytics: {
     async incrementSetViews(setId) {
+      if (!setId) return;
+      // Client-side rate-limiting: max 1 view count increment per 10s per setId
+      const limitCheck = checkRateLimit(`view:${setId}`, { maxAttempts: 1, windowMs: 10000, cooldownMs: 10000 });
+      if (!limitCheck.allowed) return;
+
       try {
         if (isConfigured) {
           await realSupabase.rpc('increment_set_view', { set_row_id: setId }).catch(async () => {
@@ -682,6 +694,11 @@ export const supabase = {
     },
 
     async incrementEntryCopies(entryId) {
+      if (!entryId) return;
+      // Client-side rate-limiting: max 3 copy taps per 5s per entryId
+      const limitCheck = checkRateLimit(`copy:${entryId}`, { maxAttempts: 3, windowMs: 5000, cooldownMs: 5000 });
+      if (!limitCheck.allowed) return;
+
       try {
         if (isConfigured) {
           await realSupabase.rpc('increment_entry_copy', { entry_row_id: entryId }).catch(async () => {
@@ -756,13 +773,11 @@ export const supabase = {
       let importedCount = 0;
       const setMap = new Map();
 
-      // Create / Map Sets
       for (const s of data.sets) {
         const targetSet = await supabase.sets.createSet(userId, s.name);
         setMap.set(s.id, targetSet.id);
       }
 
-      // Insert Entries
       for (const e of data.entries) {
         const targetSetId = setMap.get(e.set_id) || (await supabase.sets.createDefaultSet(userId)).id;
         await supabase.entries.createEntry({
@@ -787,7 +802,6 @@ export const supabase = {
       const defaultSet = await supabase.sets.createDefaultSet(userId);
       let importedCount = 0;
 
-      // Skip header
       for (let i = 1; i < lines.length; i++) {
         const raw = lines[i];
         const match = raw.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || raw.split(',');

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { KeyRound, Mail, Lock, ArrowRight, Sparkles, CheckCircle2, ShieldCheck, Eye, EyeOff } from 'lucide-react';
+import { checkRateLimit, resetRateLimit } from '../lib/rateLimiter';
+import { KeyRound, Mail, Lock, ArrowRight, Sparkles, CheckCircle2, ShieldCheck, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 
 export function Auth({ onAuthSuccess }) {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -11,11 +12,33 @@ export function Auth({ onAuthSuccess }) {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [cooldownSec, setCooldownSec] = useState(0);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
+
+    // Client-side Rate Limit check (P1 Requirement)
+    const actionKey = isForgotPassword ? 'auth:reset' : isSignUp ? 'auth:signup' : 'auth:signin';
+    const rateCheck = checkRateLimit(actionKey, { maxAttempts: 5, windowMs: 60000, cooldownMs: 30000 });
+
+    if (!rateCheck.allowed) {
+      setCooldownSec(rateCheck.retryAfterSec);
+      setErrorMessage(`⛔ Too many attempts. Please wait ${rateCheck.retryAfterSec} seconds before trying again.`);
+      const timer = setInterval(() => {
+        setCooldownSec((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            setErrorMessage('');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -24,6 +47,7 @@ export function Auth({ onAuthSuccess }) {
           redirectTo: window.location.origin
         });
         if (error) throw error;
+        resetRateLimit(actionKey);
         setSuccessMessage('Password recovery link sent! Check your inbox (or spam) to set a new password.');
         return;
       }
@@ -34,6 +58,7 @@ export function Auth({ onAuthSuccess }) {
           password
         });
         if (error) throw error;
+        resetRateLimit(actionKey);
         if (data?.session) {
           onAuthSuccess(data.session);
         } else {
@@ -45,6 +70,7 @@ export function Auth({ onAuthSuccess }) {
           password
         });
         if (error) throw error;
+        resetRateLimit(actionKey);
         if (data?.session) {
           onAuthSuccess(data.session);
         }
@@ -126,9 +152,13 @@ export function Auth({ onAuthSuccess }) {
             fontSize: '0.84rem',
             fontWeight: 600,
             marginBottom: '1.15rem',
-            lineHeight: 1.45
+            lineHeight: 1.45,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
           }}>
-            {errorMessage}
+            {cooldownSec > 0 && <AlertTriangle size={18} color="#D63031" style={{ flexShrink: 0 }} />}
+            <span>{errorMessage}</span>
           </div>
         )}
 
@@ -155,7 +185,7 @@ export function Auth({ onAuthSuccess }) {
             </div>
           </div>
 
-          {/* Password Field (Hidden in Forgot Password Mode) */}
+          {/* Password Field */}
           {!isForgotPassword && (
             <div style={{ marginBottom: '1.4rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
@@ -212,7 +242,6 @@ export function Auth({ onAuthSuccess }) {
                   }}
                   title={showPassword ? 'Password is visible (click to hide)' : 'Password is hidden (click to show)'}
                 >
-                  {/* Intuitive visual matching: Eye when visible, EyeOff when masked */}
                   {showPassword ? <Eye size={18} color="var(--coral-accent)" /> : <EyeOff size={18} />}
                 </button>
               </div>
@@ -222,11 +251,21 @@ export function Auth({ onAuthSuccess }) {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || cooldownSec > 0}
             className="btn-primary-action"
             style={{ width: '100%', padding: '0.82rem', fontSize: '0.95rem', justifyContent: 'center' }}
           >
-            <span>{loading ? 'Processing...' : isForgotPassword ? 'Send Recovery Link' : isSignUp ? 'Create Account' : 'Log In to QuickVault'}</span>
+            <span>
+              {cooldownSec > 0 
+                ? `Please wait (${cooldownSec}s)` 
+                : loading 
+                  ? 'Processing...' 
+                  : isForgotPassword 
+                    ? 'Send Recovery Link' 
+                    : isSignUp 
+                      ? 'Create Account' 
+                      : 'Log In to QuickVault'}
+            </span>
             <ArrowRight size={18} />
           </button>
         </form>

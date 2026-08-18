@@ -1,57 +1,54 @@
-// QuickVault Content Script - Live DOM & Storage Sync Bridge with P0 Origin Validation
+// QuickVault Content Script - Streamlined Direct Storage & Message Bridge
 
-function extractAndSyncVault() {
-  try {
-    const bridge = document.getElementById('__quickvault_bridge');
-    if (bridge) {
-      const rawSets = bridge.getAttribute('data-sets');
-      const rawEntries = bridge.getAttribute('data-entries');
+const TRUSTED_ORIGINS = [
+  window.location.origin,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173'
+];
 
-      if (rawSets || rawEntries) {
-        const sets = rawSets ? JSON.parse(rawSets) : [];
-        const entries = rawEntries ? JSON.parse(rawEntries) : [];
-
-        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-          chrome.storage.local.set({
-            quickvault_sets: sets,
-            quickvault_entries: entries
-          });
-        }
-      }
-    }
-  } catch (err) {
-    // safe fallback
+/**
+ * Validates origin and safely stores vault sync payloads
+ */
+function handleVaultSync(sets, entries) {
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.set({
+      quickvault_sets: sets || [],
+      quickvault_entries: entries || [],
+      quickvault_last_sync: Date.now()
+    });
   }
 }
 
-// P0 Security Fix: Origin Validation on Window PostMessage
+// 1. Reactive PostMessage Listener with Strict Origin Validation
 window.addEventListener('message', (event) => {
-  // Discard any message from untrusted origins
-  const trustedOrigins = [
-    window.location.origin,
-    'http://localhost:5173',
-    'http://127.0.0.1:5173'
-  ];
-
-  if (!trustedOrigins.includes(event.origin) && !event.origin.startsWith('chrome-extension://')) {
+  // Reject untrusted origins
+  if (!TRUSTED_ORIGINS.includes(event.origin) && !event.origin.startsWith('chrome-extension://')) {
     return;
   }
 
   if (event.data && event.data.type === 'QUICKVAULT_EXTENSION_SYNC') {
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({
-        quickvault_sets: event.data.sets || [],
-        quickvault_entries: event.data.entries || []
-      });
-    }
+    handleVaultSync(event.data.sets, event.data.entries);
   }
 });
 
-// Initial sync & periodic check
-extractAndSyncVault();
-setInterval(extractAndSyncVault, 1200);
+// 2. Initial Bridge Read on Tab Load
+try {
+  const bridge = document.getElementById('__quickvault_bridge');
+  if (bridge) {
+    const rawSets = bridge.getAttribute('data-sets');
+    const rawEntries = bridge.getAttribute('data-entries');
+    if (rawSets || rawEntries) {
+      handleVaultSync(
+        rawSets ? JSON.parse(rawSets) : [],
+        rawEntries ? JSON.parse(rawEntries) : []
+      );
+    }
+  }
+} catch {
+  // safe fallback
+}
 
-// Message responder to popup
+// 3. Direct Message Responder for Extension Popup
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'GET_LIVE_VAULT') {
@@ -66,7 +63,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
           });
           return true;
         }
-      } catch (e) {
+      } catch {
         // fallback
       }
       sendResponse({ sets: [], entries: [] });

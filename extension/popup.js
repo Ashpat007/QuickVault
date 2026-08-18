@@ -70,7 +70,7 @@ function renderEntries() {
     entriesList.innerHTML = `
       <div class="empty-state">
         <p style="font-weight: 700; color: var(--text-main); margin-bottom: 0.35rem;">No items in this vault yet.</p>
-        <p style="font-size: 0.78rem;">Click <strong>+ Add New Entry</strong> below to add your links!</p>
+        <p style="font-size: 0.78rem;">Open QuickVault dashboard to add or sync your links!</p>
       </div>
     `;
     return;
@@ -132,7 +132,9 @@ function readFromChromeStorage() {
     chrome.storage.local.get(['quickvault_sets', 'quickvault_entries'], (result) => {
       if (result && result.quickvault_sets && result.quickvault_sets.length > 0) {
         currentSets = result.quickvault_sets;
-        currentActiveSetId = currentSets[0].id;
+        if (!currentSets.some(s => s.id === currentActiveSetId)) {
+          currentActiveSetId = currentSets[0].id;
+        }
       }
       if (result && result.quickvault_entries && result.quickvault_entries.length > 0) {
         allEntries = result.quickvault_entries;
@@ -146,19 +148,36 @@ function readFromChromeStorage() {
   }
 }
 
+// Reactive Storage Listener (P2 Simplification)
+if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local') {
+      if (changes.quickvault_sets) {
+        currentSets = changes.quickvault_sets.newValue || [];
+        if (!currentSets.some(s => s.id === currentActiveSetId) && currentSets.length > 0) {
+          currentActiveSetId = currentSets[0].id;
+        }
+      }
+      if (changes.quickvault_entries) {
+        allEntries = changes.quickvault_entries.newValue || [];
+      }
+      renderProfileTabs();
+      renderEntries();
+    }
+  });
+}
+
 // 1-Step Sync Controller with safe lastError handling
 function syncDataNow() {
   readFromChromeStorage();
 
   if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
     chrome.tabs.query({}, (tabs) => {
-      // Safely ignore if no tabs
       if (chrome.runtime.lastError) return;
 
       const qvTab = tabs.find(t => t.url && (t.url.includes('127.0.0.1:5173') || t.url.includes('localhost:5173')));
       if (qvTab && qvTab.id) {
         chrome.tabs.sendMessage(qvTab.id, { action: 'GET_LIVE_VAULT' }, (response) => {
-          // Catch and consume lastError gracefully
           if (chrome.runtime.lastError) {
             readFromChromeStorage();
             return;
@@ -166,7 +185,9 @@ function syncDataNow() {
           if (response && response.entries && response.entries.length > 0) {
             if (response.sets && response.sets.length > 0) {
               currentSets = response.sets;
-              currentActiveSetId = currentSets[0].id;
+              if (!currentSets.some(s => s.id === currentActiveSetId)) {
+                currentActiveSetId = currentSets[0].id;
+              }
             }
             allEntries = response.entries;
             renderProfileTabs();
