@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
 export function Modal({ 
@@ -10,13 +10,47 @@ export function Modal({
   maxWidth = '500px',
   icon: Icon
 }) {
+  const dialogRef = useRef(null);
+
   useEffect(() => {
     if (!isOpen) return;
+
+    const previousFocus = document.activeElement;
+
+    // Focus first focusable element inside modal on open
+    setTimeout(() => {
+      if (dialogRef.current) {
+        const focusables = dialogRef.current.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusables.length > 0) {
+          focusables[0].focus();
+        }
+      }
+    }, 50);
 
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
+      } else if (e.key === 'Tab' && dialogRef.current) {
+        const focusables = Array.from(
+          dialogRef.current.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          )
+        );
+        if (focusables.length === 0) return;
+
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
 
@@ -26,6 +60,9 @@ export function Modal({
     return () => {
       document.body.classList.remove('modal-open-lock');
       window.removeEventListener('keydown', handleKeyDown);
+      if (previousFocus && typeof previousFocus.focus === 'function') {
+        previousFocus.focus();
+      }
     };
   }, [isOpen, onClose]);
 
@@ -40,6 +77,7 @@ export function Modal({
       aria-labelledby="modal-dialog-title"
     >
       <div 
+        ref={dialogRef}
         className="modal-dialog-box" 
         style={{ maxWidth, borderRadius: '22px' }}
         onClick={(e) => e.stopPropagation()}

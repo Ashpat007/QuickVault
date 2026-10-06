@@ -73,7 +73,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key-here
 ### 5. Setup Database Schema & Security Rules
 
 1. Open your Supabase project dashboard → **SQL Editor**.
-2. Run the SQL script found in [`supabase/schema.sql`](../supabase/schema.sql) to create the `sets` and `entries` tables with RLS policies.
+2. Run the SQL script found in [`supabase/schema.sql`](supabase/schema.sql) to create the `sets` and `entries` tables with RLS policies.
 
 ### 6. Start the Development Server
 

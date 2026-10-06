@@ -1,16 +1,19 @@
-# React + Vite
+# QuickVault Web Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The modern React application frontend for **QuickVault** — your personal quick-copy info vault & digital business card.
 
-Currently, two official plugins are available:
+## 🚀 Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- ⚡ **1-Tap Clipboard Copying**: Instant copy for recurring handles, links, and snippets.
+- 🤖 **Smart Type Auto-Detection**: Instant regex classification for GitHub, LinkedIn, Email, Phone, and Web Links.
+- 🔒 **Granular Entry Privacy**: Toggle `🔒 Keep Private` per entry to exclude sensitive links from public share cards.
+- 📤 **RFC 4180 CSV Import/Export**: Secure CSV export with formula injection sanitization and full multiline note support.
+- 📱 **QR & Public Share Cards**: Shareable public cards accessible via unguessable 21-character base62 nanoIDs (`/share/:slug`).
+- ☁️ **Dual-Mode Engine**: Automatic seamless switching between local `localStorage` demo mode and Supabase PostgreSQL with strict RLS policies.
 
-## React Compiler
+## 🛠️ Scripts
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- `npm run dev`: Starts local Vite development server on `http://127.0.0.1:5173/`.
+- `npm test`: Runs Vitest test suites (25+ tests covering auth, smart autofill, rate limiting, and CSV round-trips).
+- `npm run build`: Compiles production distribution to `dist/`.
+- `npm run preview`: Previews built production distribution locally.

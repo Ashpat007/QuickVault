@@ -26,7 +26,7 @@ describe('E2E End-to-End Simulation: Smart Form Autofill Assistant', () => {
 
     const createdEntries = [];
     for (const item of entriesToSave) {
-      const created = await supabase.entries._localCreateEntry({
+      const created = await supabase.entries.createEntry({
         userId,
         setId: 'set-personal',
         label: item.label,

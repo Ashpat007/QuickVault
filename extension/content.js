@@ -1,21 +1,47 @@
 // QuickVault Content Script - Direct Storage, Message Bridge & Smart Form Autofill
 
-// Strict list of trusted QuickVault application origins.
-// NEVER include window.location.origin here, as content scripts execute on arbitrary 3rd party web pages!
 const TRUSTED_ORIGINS = [
   'http://localhost:5173',
-  'http://127.0.0.1:5173'
+  'http://127.0.0.1:5173',
+  'https://quickvault.app'
 ];
 
+function isOriginTrusted(origin) {
+  if (!origin) return false;
+  if (TRUSTED_ORIGINS.includes(origin)) return true;
+  if (origin.startsWith('chrome-extension://')) return true;
+  try {
+    const url = new URL(origin);
+    if (url.hostname.endsWith('.vercel.app') || url.hostname.endsWith('.netlify.app')) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 /**
- * Validates origin and safely stores vault sync payloads
+ * Validates origin and safely stores vault sync payloads, preserving local context-menu items
  */
 function handleVaultSync(sets, entries) {
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.set({
-      quickvault_sets: sets || [],
-      quickvault_entries: entries || [],
-      quickvault_last_sync: Date.now()
+    chrome.storage.local.get(['quickvault_entries'], (result) => {
+      const existing = result.quickvault_entries || [];
+      const extEntries = existing.filter(e => e.id && String(e.id).startsWith('ext-'));
+
+      const mergedEntries = [...(entries || [])];
+      for (const extEntry of extEntries) {
+        if (!mergedEntries.some(e => e.id === extEntry.id || e.value === extEntry.value)) {
+          mergedEntries.unshift(extEntry);
+        }
+      }
+
+      chrome.storage.local.set({
+        quickvault_sets: sets || [],
+        quickvault_entries: mergedEntries,
+        quickvault_last_sync: Date.now()
+      });
     });
   }
 }
@@ -106,7 +132,7 @@ function scanAndAutofillActiveForm(entries = []) {
 // 1. Reactive PostMessage Listener with Strict Origin Validation
 window.addEventListener('message', (event) => {
   // Reject arbitrary website origins. Only accept trusted QuickVault app origins or chrome-extension scheme.
-  if (!TRUSTED_ORIGINS.includes(event.origin) && !event.origin.startsWith('chrome-extension://')) {
+  if (!isOriginTrusted(event.origin)) {
     return;
   }
 
@@ -116,7 +142,7 @@ window.addEventListener('message', (event) => {
 });
 
 // 2. Initial Bridge Read on Tab Load (Only executes on trusted QuickVault app origin tabs)
-if (TRUSTED_ORIGINS.includes(window.location.origin)) {
+if (isOriginTrusted(window.location.origin)) {
   try {
     const bridge = document.getElementById('__quickvault_bridge');
     if (bridge) {

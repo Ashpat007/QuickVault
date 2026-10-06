@@ -161,8 +161,22 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-    UPDATE entries 
-    SET copy_count = COALESCE(copy_count, 0) + 1 
-    WHERE id = entry_row_id;
+    UPDATE entries e
+    SET copy_count = COALESCE(e.copy_count, 0) + 1
+    FROM sets s
+    WHERE e.id = entry_row_id
+      AND e.set_id = s.id
+      AND e.is_private = false
+      AND s.is_public = true;
 END;
 $$;
+
+-- 9. Explicit RPC Execution Permissions (Principle of Least Privilege)
+REVOKE ALL ON FUNCTION get_public_vault_card(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION get_public_vault_card(TEXT) TO anon, authenticated;
+
+REVOKE ALL ON FUNCTION increment_set_view(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION increment_set_view(UUID) TO anon, authenticated;
+
+REVOKE ALL ON FUNCTION increment_entry_copy(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION increment_entry_copy(UUID) TO anon, authenticated;

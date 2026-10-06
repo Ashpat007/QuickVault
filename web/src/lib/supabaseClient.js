@@ -4,14 +4,19 @@ import { checkRateLimit } from './rateLimiter';
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
-export const isConfigured = Boolean(
+export let isConfigured = Boolean(
   SUPABASE_URL && 
   SUPABASE_ANON_KEY && 
   !SUPABASE_URL.includes('your-project') &&
   !SUPABASE_URL.includes('your-supabase') &&
   !SUPABASE_ANON_KEY.includes('your-anon') &&
-  !SUPABASE_ANON_KEY.includes('your-supabase')
+  !SUPABASE_ANON_KEY.includes('your-supabase') &&
+  !SUPABASE_URL.includes('ojxxqcgvgyfpyltwmekv')
 );
+
+export function _setTestConfigured(val) {
+  isConfigured = val;
+}
 
 export const isOfflineFallback = !isConfigured;
 
@@ -112,7 +117,7 @@ export function generateSlug(prefix = 'share') {
 /**
  * Sanitizes cell text to prevent CSV formula injection (=, +, -, @)
  */
-function sanitizeCsvValue(val) {
+export function sanitizeCsvValue(val) {
   if (val === null || val === undefined) return '';
   const str = String(val);
   if (/^[=\+\-@\t\r]/.test(str)) {
@@ -122,31 +127,65 @@ function sanitizeCsvValue(val) {
 }
 
 /**
- * Parses a single CSV line handling quotes and commas cleanly
+ * Restores original cell text by removing leading quote added for formula injection protection
  */
-function parseCsvLine(line) {
-  const result = [];
-  let current = '';
+export function unsanitizeCsvValue(val) {
+  if (val === null || val === undefined) return '';
+  const str = String(val);
+  if (/^'[=\+\-@\t\r]/.test(str)) {
+    return str.substring(1);
+  }
+  return str;
+}
+
+/**
+ * RFC 4180 compliant full CSV document parser
+ * Correctly parses multiline quoted cells, escaped quotes, and commas
+ */
+export function parseCsvDocument(csvStr) {
+  if (!csvStr) return [];
+  const rows = [];
+  let currentRow = [];
+  let currentCell = '';
   let inQuotes = false;
 
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
+  for (let i = 0; i < csvStr.length; i++) {
+    const char = csvStr[i];
+    const nextChar = csvStr[i + 1];
+
     if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
+      if (inQuotes && nextChar === '"') {
+        currentCell += '"';
         i++;
       } else {
         inQuotes = !inQuotes;
       }
     } else if (char === ',' && !inQuotes) {
-      result.push(current);
-      current = '';
+      currentRow.push(currentCell);
+      currentCell = '';
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        i++;
+      }
+      currentRow.push(currentCell);
+      if (currentRow.length > 1 || currentRow[0] !== '') {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentCell = '';
     } else {
-      current += char;
+      currentCell += char;
     }
   }
-  result.push(current);
-  return result.map(cell => cell.replace(/^'/, ''));
+
+  if (currentCell !== '' || currentRow.length > 0) {
+    currentRow.push(currentCell);
+    if (currentRow.length > 1 || currentRow[0] !== '') {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
 }
 
 export const supabase = {
@@ -505,22 +544,10 @@ export const supabase = {
       }
 
       const sets = getLocalSets();
-      let found = sets.find(s => s.public_slug === cleanSlug);
-      if (!found) {
-        found = sets.find(s => s.public_slug && (s.public_slug.includes(cleanSlug) || cleanSlug.includes(s.public_slug)));
-      }
-      if (!found) {
-        found = sets.find(s => s.is_public && s.public_slug);
-      }
-      if (!found && sets.length > 0) {
-        found = sets[0];
-        found.is_public = true;
-        found.public_slug = cleanSlug;
-        saveLocalSets(sets);
-      }
+      const found = sets.find(s => s.public_slug === cleanSlug && s.is_public === true);
 
       if (found) {
-        const entries = getLocalEntries().filter(e => (!found.id || e.set_id === found.id || !e.set_id) && !e.is_private);
+        const entries = getLocalEntries().filter(e => e.set_id === found.id && !e.is_private);
         return {
           id: found.id,
           name: found.name,
@@ -553,52 +580,7 @@ export const supabase = {
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     },
 
-    async fetchPublicEntries(setId) {
-      if (isConfigured) {
-        const { data, error } = await realSupabase
-          .from('entries')
-          .select('*')
-          .eq('set_id', setId)
-          .eq('is_private', false)
-          .order('sort_order', { ascending: true });
-        if (error) throw error;
-        return data || [];
-      }
-
-      const entries = getLocalEntries();
-      let publicEntries = entries.filter(e => (!setId || e.set_id === setId || !e.set_id) && !e.is_private);
-      if (publicEntries.length === 0 && entries.length > 0) {
-        publicEntries = entries.filter(e => !setId || e.set_id === setId || !e.set_id);
-      }
-      return publicEntries.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-    },
-
-    async _localCreateEntry({ userId, setId, label, value, note = '', entryType, isPrivate = true, sortOrder = 0 }) {
-      const payload = {
-        user_id: userId || 'local-user',
-        set_id: setId || 'set-personal',
-        label,
-        value,
-        note: note ? note.trim() : null,
-        entry_type: entryType,
-        is_private: isPrivate,
-        sort_order: sortOrder,
-        copy_count: 0
-      };
-
-      const entries = getLocalEntries();
-      const newEntry = {
-        ...payload,
-        id: `entry-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        created_at: new Date().toISOString()
-      };
-      entries.push(newEntry);
-      saveLocalEntries(entries);
-      return newEntry;
-    },
-
-    async createEntry(params) {
-      const { userId, setId, label, value, note = '', entryType, isPrivate = true, sortOrder = 0 } = params;
+    async createEntry({ userId, setId, label, value, note = '', entryType, isPrivate = true, sortOrder = 0 }) {
       const payload = {
         user_id: userId || 'local-user',
         set_id: setId || 'set-personal',
@@ -621,7 +603,15 @@ export const supabase = {
         return data;
       }
 
-      return this._localCreateEntry(params);
+      const entries = getLocalEntries();
+      const newEntry = {
+        ...payload,
+        id: `entry-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        created_at: new Date().toISOString()
+      };
+      entries.push(newEntry);
+      saveLocalEntries(entries);
+      return newEntry;
     },
 
     async updateEntry({ id, userId, label, value, note = '', entryType, isPrivate = true }) {
@@ -846,21 +836,22 @@ export const supabase = {
     },
 
     async importVaultFromCsv(userId, csvStr) {
-      const lines = csvStr.split(/\r?\n/).filter(line => line.trim().length > 0);
-      if (lines.length <= 1) return { importedCount: 0 };
+      const rows = parseCsvDocument(csvStr);
+      if (rows.length <= 1) return { importedCount: 0 };
 
       const defaultSet = await supabase.sets.createDefaultSet(userId);
       let importedCount = 0;
 
-      for (let i = 1; i < lines.length; i++) {
-        const match = parseCsvLine(lines[i]);
-        if (match.length >= 3) {
-          const setName = match[0].trim() || 'Personal';
-          const label = match[1].trim();
-          const value = match[2].trim();
-          const entryType = match[3] ? match[3].trim() : 'text';
-          const note = match[4] ? match[4].trim() : '';
-          const isPrivate = match[5] ? match[5].toLowerCase().includes('true') : true;
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.length >= 3) {
+          const rawSetName = unsanitizeCsvValue(row[0]).trim();
+          const setName = rawSetName || 'Personal';
+          const label = unsanitizeCsvValue(row[1]).trim();
+          const value = unsanitizeCsvValue(row[2]).trim();
+          const entryType = row[3] ? unsanitizeCsvValue(row[3]).trim() : 'text';
+          const note = row[4] ? unsanitizeCsvValue(row[4]).trim() : '';
+          const isPrivate = row[5] ? row[5].toLowerCase().includes('true') : true;
 
           const targetSet = await supabase.sets.createSet(userId, setName);
 

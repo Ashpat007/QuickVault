@@ -1,5 +1,4 @@
 /* QuickVault Modern Solid Color Design System */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700;800&display=swap');
 
 :root {
   /* Curated Solid Swatch Tokens */
@@ -656,4 +655,39 @@ body.modal-open-lock {
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive Mobile Styles (375px+) */
+@media (max-width: 640px) {
+  .app-container {
+    padding: 1rem 0.75rem !important;
+  }
+  .navbar-container {
+    padding: 0.75rem 1rem !important;
+    gap: 0.5rem;
+  }
+  .navbar-brand-title {
+    font-size: 1.1rem !important;
+  }
+  .search-input-deck {
+    font-size: 0.9rem !important;
+    padding: 0.75rem 1rem !important;
+  }
+  .entry-row-card {
+    padding: 0.75rem 1rem !important;
+    gap: 0.75rem !important;
+  }
+  .modal-dialog-box {
+    margin: 1rem;
+    max-width: calc(100vw - 2rem) !important;
+  }
+  .toast-floating-container {
+    bottom: 1rem !important;
+    right: 1rem !important;
+    left: 1rem !important;
+  }
+  .toast-pill-box {
+    justify-content: center;
+    width: 100%;
+  }
 }

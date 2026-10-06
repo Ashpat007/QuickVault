@@ -111,7 +111,7 @@ export default function App() {
         type: 'QUICKVAULT_EXTENSION_SYNC',
         sets: setsData,
         entries: entriesData
-      }, '*');
+      }, window.location.origin);
 
       let bridge = document.getElementById('__quickvault_bridge');
       if (!bridge) {
