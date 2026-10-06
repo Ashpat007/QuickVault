@@ -34,7 +34,7 @@ const FIELD_INTENTS = [
   {
     category: 'name',
     typeMatch: ['text'],
-    keywords: ['full name', 'name', 'first name', 'last name', 'applicant name', 'candidate name'],
+    keywords: ['full name', 'candidate name', 'applicant name', 'first name', 'last name'],
   },
   {
     category: 'bio',
@@ -96,36 +96,34 @@ export function matchFormFields(fields, entries = []) {
     let bestEntry = null;
     let confidence = 'low';
 
-    // 1. Direct type match by label keywords
+    // 1. Direct intent match by keywords
     let matchedIntent = FIELD_INTENTS.find(intent => 
       intent.keywords.some(kw => fieldLower.includes(kw) || kw.includes(fieldLower))
     );
 
     if (matchedIntent) {
-      // Find entry matching the intent type or label
+      // Find entry matching the specific intent type (e.g. 'github', 'linkedin', 'email', 'phone', 'link')
       bestEntry = entries.find(e => 
-        (e.entry_type && matchedIntent.typeMatch.includes(e.entry_type.toLowerCase())) ||
-        (e.label && e.label.toLowerCase().includes(matchedIntent.category))
+        e.entry_type && matchedIntent.typeMatch.includes(e.entry_type.toLowerCase())
       );
+
+      if (!bestEntry) {
+        bestEntry = entries.find(e => 
+          e.label && e.label.toLowerCase().includes(matchedIntent.category)
+        );
+      }
 
       if (bestEntry) {
         confidence = 'high';
       }
     }
 
-    // 2. Exact or substring match on entry label / note / type
+    // 2. Exact or word-bounded match on entry label
     if (!bestEntry) {
       bestEntry = entries.find(e => {
         const entryLabel = (e.label || '').toLowerCase();
-        const entryType = (e.entry_type || '').toLowerCase();
-        const entryNote = (e.note || '').toLowerCase();
-
-        return (
-          entryLabel.includes(fieldLower) || 
-          fieldLower.includes(entryLabel) ||
-          entryType.includes(fieldLower) ||
-          (entryNote && fieldLower.includes(entryNote))
-        );
+        const words = fieldLower.split(/\s+/);
+        return words.some(w => w.length > 3 && entryLabel.includes(w));
       });
 
       if (bestEntry) {
@@ -133,7 +131,7 @@ export function matchFormFields(fields, entries = []) {
       }
     }
 
-    // 3. Fallback: match by URL domain or value type if label indicates URL/email/phone
+    // 3. Fallback: match by generic entry_type
     if (!bestEntry) {
       if (fieldLower.includes('email') || fieldLower.includes('mail')) {
         bestEntry = entries.find(e => e.entry_type === 'email');
@@ -143,7 +141,7 @@ export function matchFormFields(fields, entries = []) {
         bestEntry = entries.find(e => e.entry_type === 'github');
       } else if (fieldLower.includes('linkedin')) {
         bestEntry = entries.find(e => e.entry_type === 'linkedin');
-      } else if (fieldLower.includes('link') || fieldLower.includes('site') || fieldLower.includes('url')) {
+      } else if (fieldLower.includes('portfolio') || fieldLower.includes('site') || fieldLower.includes('url')) {
         bestEntry = entries.find(e => e.entry_type === 'link');
       }
 
