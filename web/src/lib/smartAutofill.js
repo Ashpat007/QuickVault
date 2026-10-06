@@ -1,8 +1,14 @@
 /**
- * QuickVault AI Form Autofill Engine
- * Client-side semantic matching engine for pairing form questions/fields
+ * QuickVault Smart Form Autofill Engine
+ * Client-side semantic intent matching engine for pairing form questions/fields
  * with stored QuickVault entries.
  */
+
+// Word boundary helper to prevent loose substring false-positives (e.g. "digit" matching "git")
+function matchesKeyword(text, keyword) {
+  const pattern = new RegExp(`\\b${keyword}\\b`, 'i');
+  return pattern.test(text);
+}
 
 // Semantic field dictionary for mapping form questions to vault entry types & labels
 const FIELD_INTENTS = [
@@ -92,24 +98,24 @@ export function matchFormFields(fields, entries = []) {
   const missing = [];
 
   normalizedFields.forEach((field) => {
-    const fieldLower = field.label.toLowerCase();
+    const fieldText = field.label.trim();
     let bestEntry = null;
     let confidence = 'low';
 
-    // 1. Direct intent match by keywords
+    // 1. Exact or word-boundary intent match
     let matchedIntent = FIELD_INTENTS.find(intent => 
-      intent.keywords.some(kw => fieldLower.includes(kw) || kw.includes(fieldLower))
+      intent.keywords.some(kw => matchesKeyword(fieldText, kw))
     );
 
     if (matchedIntent) {
-      // Find entry matching the specific intent type (e.g. 'github', 'linkedin', 'email', 'phone', 'link')
+      // Find entry matching specific intent type
       bestEntry = entries.find(e => 
         e.entry_type && matchedIntent.typeMatch.includes(e.entry_type.toLowerCase())
       );
 
       if (!bestEntry) {
         bestEntry = entries.find(e => 
-          e.label && e.label.toLowerCase().includes(matchedIntent.category)
+          e.label && matchesKeyword(e.label, matchedIntent.category)
         );
       }
 
@@ -118,12 +124,12 @@ export function matchFormFields(fields, entries = []) {
       }
     }
 
-    // 2. Exact or word-bounded match on entry label
+    // 2. Exact word match on entry label
     if (!bestEntry) {
       bestEntry = entries.find(e => {
         const entryLabel = (e.label || '').toLowerCase();
-        const words = fieldLower.split(/\s+/);
-        return words.some(w => w.length > 3 && entryLabel.includes(w));
+        const words = fieldText.toLowerCase().split(/\s+/);
+        return words.some(w => w.length >= 3 && matchesKeyword(entryLabel, w));
       });
 
       if (bestEntry) {
@@ -131,17 +137,18 @@ export function matchFormFields(fields, entries = []) {
       }
     }
 
-    // 3. Fallback: match by generic entry_type
+    // 3. Strict Fallback matching
     if (!bestEntry) {
-      if (fieldLower.includes('email') || fieldLower.includes('mail')) {
+      const lower = fieldText.toLowerCase();
+      if (matchesKeyword(lower, 'email') || matchesKeyword(lower, 'mail')) {
         bestEntry = entries.find(e => e.entry_type === 'email');
-      } else if (fieldLower.includes('phone') || fieldLower.includes('mobile')) {
+      } else if (matchesKeyword(lower, 'phone') || matchesKeyword(lower, 'mobile')) {
         bestEntry = entries.find(e => e.entry_type === 'phone');
-      } else if (fieldLower.includes('github') || fieldLower.includes('git')) {
+      } else if (matchesKeyword(lower, 'github') || matchesKeyword(lower, 'git')) {
         bestEntry = entries.find(e => e.entry_type === 'github');
-      } else if (fieldLower.includes('linkedin')) {
+      } else if (matchesKeyword(lower, 'linkedin')) {
         bestEntry = entries.find(e => e.entry_type === 'linkedin');
-      } else if (fieldLower.includes('portfolio') || fieldLower.includes('site') || fieldLower.includes('url')) {
+      } else if (matchesKeyword(lower, 'portfolio') || matchesKeyword(lower, 'website')) {
         bestEntry = entries.find(e => e.entry_type === 'link');
       }
 

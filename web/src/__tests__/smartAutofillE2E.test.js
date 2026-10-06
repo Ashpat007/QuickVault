@@ -1,17 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { matchFormFields, parseFormQuestions } from '../lib/aiFormAutofill';
+import { matchFormFields, parseFormQuestions } from '../lib/smartAutofill';
 import { supabase } from '../lib/supabaseClient';
 
-describe('E2E End-to-End Simulation: AI Form Autofill Assistant', () => {
+describe('E2E End-to-End Simulation: Smart Form Autofill Assistant', () => {
   it('simulates account creation, entry creation, and 100% form autofill mapping', async () => {
-    // 1. Simulate account creation / sign in
-    const authRes = await supabase.auth.signUp({
-      email: 'applicant@example.com',
-      password: 'SecurePassword123!'
-    });
+    // 1. Simulate account creation / sign in (using local auth helper for deterministic offline testing)
+    const authRes = await supabase.auth._localSignUp(
+      'applicant@example.com',
+      'SecurePassword123!'
+    );
     expect(authRes.data).toBeDefined();
 
-    const userId = authRes.data?.user?.id || authRes.data?.session?.user?.id || 'local-user';
+    const userId = authRes.data?.user?.id || 'local-user';
     expect(userId).toBeDefined();
 
     // 2. Create sample application vault entries
@@ -26,7 +26,7 @@ describe('E2E End-to-End Simulation: AI Form Autofill Assistant', () => {
 
     const createdEntries = [];
     for (const item of entriesToSave) {
-      const created = await supabase.entries.createEntry({
+      const created = await supabase.entries._localCreateEntry({
         userId,
         setId: 'set-personal',
         label: item.label,
@@ -52,7 +52,7 @@ describe('E2E End-to-End Simulation: AI Form Autofill Assistant', () => {
     const parsedQuestions = parseFormQuestions(jobAppFormQuestions);
     expect(parsedQuestions).toHaveLength(6);
 
-    // 4. Run AI Form Autofill Matching Engine
+    // 4. Run Smart Form Autofill Matching Engine
     const autofillResult = matchFormFields(parsedQuestions, createdEntries);
 
     expect(autofillResult.matchedCount).toEqual(6);

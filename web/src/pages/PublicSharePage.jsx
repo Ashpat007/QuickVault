@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import QRCode from 'qrcode';
 import { 
   KeyRound, 
   Copy, 
@@ -11,11 +12,13 @@ import {
   Phone, 
   Globe, 
   FileText, 
-  Lock,
-  ArrowRight,
-  HelpCircle,
-  X,
-  CheckCircle2
+  Lock, 
+  ArrowRight, 
+  HelpCircle, 
+  X, 
+  CheckCircle2,
+  Info,
+  QrCode
 } from 'lucide-react';
 
 function getIconForType(type) {
@@ -48,6 +51,7 @@ export function PublicSharePage({ slug }) {
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+  const [qrDataUrl, setQrDataUrl] = useState('');
   const [isPublicGuideOpen, setIsPublicGuideOpen] = useState(false);
 
   // 100% Isolated Theme for Public Viewers
@@ -64,40 +68,50 @@ export function PublicSharePage({ slug }) {
     setPublicTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
-  const loadPublicData = async (showLoading = false) => {
-    if (showLoading) setLoading(true);
+  const loadPublicData = async () => {
     try {
-      const publicSet = await supabase.sets.fetchSetBySlug(slug);
-      if (!publicSet || !publicSet.is_public) {
+      const publicCard = await supabase.sets.fetchSetBySlug(slug);
+      
+      if (!publicCard) {
         setSet(null);
         setEntries([]);
         return;
       }
-      setSet(publicSet);
-      const publicEntries = await supabase.entries.fetchPublicEntries(publicSet.id);
-      setEntries(publicEntries || []);
 
-      // 1. 📊 Increment Public Card View Count
-      if (showLoading && publicSet.id) {
-        supabase.analytics.incrementSetViews(publicSet.id);
+      setSet(publicCard);
+      setEntries(publicCard.entries || []);
+
+      if (publicCard.id) {
+        supabase.analytics.incrementSetViews(publicCard.id);
       }
+
+      // Generate large QR code for public contact card
+      const shareUrl = window.location.href;
+      QRCode.toDataURL(shareUrl, { width: 220, margin: 2 })
+        .then(url => setQrDataUrl(url))
+        .catch(() => {});
+
     } catch (err) {
       console.error('Error fetching public set', err);
       setSet(null);
+      setEntries([]);
     } finally {
-      if (showLoading) setLoading(false);
+      setLoading(false);
     }
   };
 
+  // Window Focus Refresh instead of 3s polling
   useEffect(() => {
-    loadPublicData(true);
+    loadPublicData();
 
-    const interval = setInterval(() => loadPublicData(false), 3000);
-    const handleStorage = () => loadPublicData(false);
+    const handleFocus = () => loadPublicData();
+    const handleStorage = () => loadPublicData();
+
+    window.addEventListener('focus', handleFocus);
     window.addEventListener('storage', handleStorage);
 
     return () => {
-      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
       window.removeEventListener('storage', handleStorage);
     };
   }, [slug]);
@@ -107,7 +121,6 @@ export function PublicSharePage({ slug }) {
       await navigator.clipboard.writeText(entry.value);
       setCopiedId(entry.id);
       setToastMessage(`Copied "${entry.label}" to clipboard!`);
-      // 2. 📊 Increment Public Copy Count
       supabase.analytics.incrementEntryCopies(entry.id);
       setTimeout(() => setCopiedId(null), 2000);
       setTimeout(() => setToastMessage(null), 2500);
@@ -116,7 +129,6 @@ export function PublicSharePage({ slug }) {
     }
   };
 
-  // Opens Sign Up / Create Vault in a fresh new browser tab!
   const handleCreateOwnVault = () => {
     window.open('/', '_blank');
   };
@@ -242,42 +254,53 @@ export function PublicSharePage({ slug }) {
 
       {/* Main Public Profile Container */}
       <main className="main-wrapper" style={{ maxWidth: '680px' }}>
-        {/* Profile Identity Card */}
-        <div className="profile-header-card" style={{ marginBottom: '1.25rem', padding: '1.25rem 1.6rem' }}>
-          <div className="profile-info">
-            <div className="profile-avatar-icon" style={{ width: '48px', height: '48px', borderRadius: '16px' }}>
-              <KeyRound size={24} />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <h2 className="profile-title" style={{ fontSize: '1.4rem' }}>
-                  {set.name} Digital Card
-                </h2>
-                <span style={{
-                  fontSize: '0.72rem',
-                  fontWeight: 800,
-                  color: '#20BF6B',
-                  background: 'rgba(32, 191, 107, 0.14)',
-                  padding: '0.2rem 0.6rem',
-                  borderRadius: '9999px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.25rem'
-                }}>
-                  ● Verified Active
-                </span>
+        {/* Digital Business Card Hero */}
+        <div className="profile-header-card" style={{ marginBottom: '1.5rem', padding: '1.6rem 1.8rem', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1.2rem' }}>
+            <div className="profile-info">
+              <div className="profile-avatar-icon" style={{ width: '56px', height: '56px', borderRadius: '18px', background: '#D94A00', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', fontWeight: 800 }}>
+                {set.name.charAt(0).toUpperCase()}
               </div>
-              <p className="profile-subtitle" style={{ fontSize: '0.88rem', marginTop: '0.2rem' }}>
-                Public Contact Card & Quick-Copy Links
-              </p>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  <h1 className="profile-name-title" style={{ fontSize: '1.65rem' }}>
+                    {set.name} Card
+                  </h1>
+                  <span className="profile-public-badge" style={{ fontSize: '0.74rem', background: 'rgba(32, 191, 107, 0.14)', color: '#20BF6B' }}>
+                    <Globe size={13} /> Verified Contact Card
+                  </span>
+                </div>
+                <p className="profile-subtitle" style={{ fontSize: '0.92rem', marginTop: '0.3rem' }}>
+                  Official Digital Business Card & 1-Tap Copyable Links
+                </p>
+              </div>
             </div>
+
+            {/* QR Code Container */}
+            {qrDataUrl && (
+              <div style={{
+                background: '#FFFFFF',
+                padding: '0.6rem',
+                borderRadius: '14px',
+                border: '1px solid var(--border-subtle)',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)'
+              }}>
+                <img src={qrDataUrl} alt="QuickVault Card QR Code" style={{ width: '95px', height: '95px', display: 'block', borderRadius: '8px' }} />
+              </div>
+            )}
           </div>
         </div>
 
         {/* Public Items List */}
         {entries.length === 0 ? (
-          <div className="glass-card" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
-            No public entries are currently shared in this profile.
+          <div className="glass-card" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: 'var(--text-muted)' }}>
+            <Info size={28} color="#D94A00" style={{ margin: '0 auto 0.75rem' }} />
+            <h4 style={{ color: 'var(--text-main)', fontSize: '1.1rem', fontWeight: 800, marginBottom: '0.35rem' }}>
+              No public entries shared yet
+            </h4>
+            <p style={{ fontSize: '0.88rem', maxWidth: '420px', margin: '0 auto' }}>
+              Add links or handles to your QuickVault to display them on this digital card.
+            </p>
           </div>
         ) : (
           <div>
@@ -287,6 +310,8 @@ export function PublicSharePage({ slug }) {
                 <div
                   key={entry.id}
                   className="vault-entry-card-3d"
+                  onClick={() => handleCopy(entry)}
+                  title="Click anywhere on card to 1-tap copy"
                   style={{
                     marginBottom: '0.85rem',
                     background: 'var(--surface-card)',
@@ -296,6 +321,7 @@ export function PublicSharePage({ slug }) {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '1rem',
+                    cursor: 'pointer',
                     boxShadow: 'var(--shadow-card)'
                   }}
                 >
@@ -330,7 +356,7 @@ export function PublicSharePage({ slug }) {
 
                   <button
                     type="button"
-                    onClick={() => handleCopy(entry)}
+                    onClick={(e) => { e.stopPropagation(); handleCopy(entry); }}
                     className={`btn-copy-action ${isCopied ? 'copied' : ''}`}
                   >
                     {isCopied ? <Check size={14} /> : <Copy size={14} />}
@@ -355,13 +381,13 @@ export function PublicSharePage({ slug }) {
             width: '50px',
             height: '50px',
             borderRadius: '14px',
-            background: '#FF5900',
+            background: '#D94A00',
             color: '#FFFFFF',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 1rem',
-            boxShadow: '0 4px 16px rgba(255, 89, 0, 0.35)'
+            boxShadow: '0 4px 16px rgba(217, 74, 0, 0.35)'
           }}>
             <Sparkles size={24} />
           </div>
@@ -386,66 +412,7 @@ export function PublicSharePage({ slug }) {
         </div>
       </main>
 
-      {/* Public "How It Works" Modal */}
-      {isPublicGuideOpen && (
-        <div className="modal-overlay-blur" onClick={() => setIsPublicGuideOpen(false)}>
-          <div 
-            className="modal-dialog-box" 
-            style={{ maxWidth: '500px', borderRadius: '22px' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'space-between', 
-              padding: '1.2rem 1.6rem 1rem',
-              borderBottom: '1px solid var(--border-subtle)',
-              background: 'var(--surface-elevated)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-                <HelpCircle size={20} color="var(--coral-accent)" />
-                <h3 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                  How This Card Works
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsPublicGuideOpen(false)}
-                className="icon-action-button"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div style={{ padding: '1.5rem 1.75rem' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.55 }}>
-                <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: '14px', padding: '1rem' }}>
-                  <strong style={{ color: 'var(--coral-accent)', display: 'block', marginBottom: '0.25rem' }}>📋 1. Instant 1-Tap Copying</strong>
-                  Click the <strong>Copy</strong> button on any item to immediately copy GitHub URLs, LinkedIn handles, work emails, or portfolio links to your clipboard.
-                </div>
-
-                <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: '14px', padding: '1rem' }}>
-                  <strong style={{ color: 'var(--coral-accent)', display: 'block', marginBottom: '0.25rem' }}>✨ 2. Create Your Own Card</strong>
-                  You can build your own digital contact card and QR code in under 30 seconds for free by clicking <strong>Create Your Free QuickVault</strong> below.
-                </div>
-              </div>
-
-              <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
-                <button
-                  type="button"
-                  onClick={() => setIsPublicGuideOpen(false)}
-                  className="btn-primary-action"
-                  style={{ padding: '0.65rem 1.25rem', fontSize: '0.88rem' }}
-                >
-                  Got It!
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast Notification */}
+      {/* Floating Toast */}
       {toastMessage && (
         <div className="toast-floating-container">
           <div className="toast-pill-box">

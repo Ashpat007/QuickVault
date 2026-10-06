@@ -77,9 +77,23 @@ function scanAndAutofillActiveForm(entries = []) {
       });
     }
 
-    // 3. Fill value and dispatch synthetic events
+    // 3. Fill value using native property setter (bypasses React/Vue controlled input value tracker)
     if (matchedEntry && matchedEntry.value) {
-      input.value = matchedEntry.value;
+      try {
+        const isTextArea = input.tagName === 'TEXTAREA';
+        const prototype = isTextArea 
+          ? window.HTMLTextAreaElement.prototype 
+          : window.HTMLInputElement.prototype;
+        const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+        
+        if (valueSetter) {
+          valueSetter.call(input, matchedEntry.value);
+        } else {
+          input.value = matchedEntry.value;
+        }
+      } catch {
+        input.value = matchedEntry.value;
+      }
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
       filledCount++;

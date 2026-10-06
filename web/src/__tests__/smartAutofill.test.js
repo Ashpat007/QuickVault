@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseFormQuestions, matchFormFields, FORM_TEMPLATES } from '../lib/aiFormAutofill';
+import { parseFormQuestions, matchFormFields, FORM_TEMPLATES } from '../lib/smartAutofill';
 
-describe('AI Form Autofill Engine (aiFormAutofill.js)', () => {
+describe('Smart Form Autofill Engine (smartAutofill.js)', () => {
   const mockEntries = [
     { id: '1', label: 'GitHub Profile', value: 'https://github.com/alexdev', entry_type: 'github' },
     { id: '2', label: 'LinkedIn Profile', value: 'https://linkedin.com/in/alexdev', entry_type: 'linkedin' },

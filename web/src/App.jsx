@@ -7,16 +7,14 @@ import { ShareModal } from './components/ShareModal';
 import { BackupModal } from './components/BackupModal';
 import { UserGuideModal } from './components/UserGuideModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
-import { AiFormAutofillModal } from './components/AiFormAutofillModal';
+import { SmartAutofillModal } from './components/SmartAutofillModal';
+import { UserMenu } from './components/UserMenu';
+import { Modal } from './components/Modal';
 import { PublicSharePage } from './pages/PublicSharePage';
 import { 
   KeyRound, 
-  LogOut, 
-  User, 
-  FolderHeart, 
   QrCode, 
   Globe, 
-  HelpCircle, 
   ShieldOff, 
   Sun, 
   Moon, 
@@ -24,15 +22,10 @@ import {
   CheckCircle2, 
   Lock, 
   Save, 
-  X,
-  Eye,
-  EyeOff,
-  Database,
   BarChart2,
   Plus,
   Search,
-  Sparkles,
-  Wand2
+  Sparkles
 } from 'lucide-react';
 
 export default function App() {
@@ -96,7 +89,7 @@ export default function App() {
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-  const [isAiAutofillModalOpen, setIsAiAutofillModalOpen] = useState(false);
+  const [isSmartAutofillModalOpen, setIsSmartAutofillModalOpen] = useState(false);
   const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false);
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -166,7 +159,7 @@ export default function App() {
 
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
         e.preventDefault();
-        setIsAiAutofillModalOpen(prev => !prev);
+        setIsSmartAutofillModalOpen(prev => !prev);
         return;
       }
 
@@ -223,6 +216,9 @@ export default function App() {
       } else {
         setLoading(false);
       }
+    }).catch(err => {
+      console.warn('Auth session check error', err);
+      setLoading(false);
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, newSession) => {
@@ -326,7 +322,11 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // ignore
+    }
     setSession(null);
     localStorage.removeItem('quickvault_local_session');
   };
@@ -394,17 +394,17 @@ export default function App() {
           </div>
 
           <div className="nav-actions">
-            {/* AI Form Autofill Trigger */}
+            {/* Smart Autofill Trigger */}
             {session && (
               <button
                 type="button"
-                onClick={() => setIsAiAutofillModalOpen(true)}
+                onClick={() => setIsSmartAutofillModalOpen(true)}
                 className="nav-btn-icon"
-                title="AI Form Autofill Assistant (Ctrl + Shift + A)"
-                style={{ background: 'rgba(255, 89, 0, 0.12)', border: '1px solid rgba(255, 89, 0, 0.3)' }}
+                title="Smart Form Autofill Assistant (Ctrl + Shift + A)"
+                style={{ background: 'rgba(217, 74, 0, 0.12)', border: '1px solid rgba(217, 74, 0, 0.3)' }}
               >
-                <Sparkles size={14} color="#FF5900" />
-                <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>AI Autofill</span>
+                <Sparkles size={14} color="#D94A00" />
+                <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>Smart Autofill</span>
               </button>
             )}
 
@@ -421,60 +421,26 @@ export default function App() {
               </button>
             )}
 
-            {/* Backup & Restore Trigger */}
-            {session && (
-              <button
-                type="button"
-                onClick={() => setIsBackupModalOpen(true)}
-                className="nav-btn-icon"
-                title="Vault Backup & Restore (JSON / CSV)"
-              >
-                <Database size={14} color="var(--coral-accent)" />
-                <span>Backup</span>
-              </button>
-            )}
-
             {/* Theme Toggle Button */}
             <button
               type="button"
               onClick={toggleTheme}
               className="theme-toggle-btn"
               title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+              aria-label="Toggle light/dark theme"
             >
               {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsGuideModalOpen(true)}
-              className="nav-btn-icon"
-            >
-              <HelpCircle size={15} color="var(--coral-accent)" />
-              <span>Guide</span>
-            </button>
-
+            {/* Streamlined User Profile Menu */}
             {session && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', borderLeft: '1px solid var(--border-subtle)', paddingLeft: '0.65rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setIsResetPasswordModalOpen(true)}
-                  className="nav-btn-icon"
-                  title="Update Password"
-                >
-                  <Lock size={13} color="var(--coral-accent)" />
-                  <span>Password</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="nav-btn-icon"
-                  title="Log Out"
-                >
-                  <LogOut size={13} />
-                  <span>Log Out</span>
-                </button>
-              </div>
+              <UserMenu
+                session={session}
+                onOpenBackup={() => setIsBackupModalOpen(true)}
+                onOpenPasswordReset={() => setIsResetPasswordModalOpen(true)}
+                onOpenGuide={() => setIsGuideModalOpen(true)}
+                onSignOut={handleSignOut}
+              />
             )}
           </div>
         </div>
@@ -496,7 +462,7 @@ export default function App() {
           <div>
             {/* UNIFIED COMMAND DECK */}
             <div className="command-deck-container">
-              {/* Row 1: Profile Selector Tabs & Actions */}
+              {/* Row 1: Profile Selector Tabs & Main Actions */}
               <div className="deck-top-row">
                 <SetSwitcher
                   sets={userSets}
@@ -508,17 +474,6 @@ export default function App() {
                 />
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    onClick={() => setIsAiAutofillModalOpen(true)}
-                    className="btn-secondary-action"
-                    style={{ padding: '0.55rem 1rem', fontSize: '0.84rem' }}
-                    title="Open AI Form Autofill Studio"
-                  >
-                    <Sparkles size={15} color="#FF5900" />
-                    <span>AI Autofill</span>
-                  </button>
-
                   <button
                     type="button"
                     onClick={() => setIsShareModalOpen(true)}
@@ -544,96 +499,8 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Row 2: Active Profile Meta & Analytics */}
-              <div className="deck-meta-row">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
-                  <strong style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.05rem', color: 'var(--text-main)' }}>
-                    {currentSet?.name || 'Personal'} Vault
-                  </strong>
-
-                  {currentSet?.is_public ? (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <span 
-                        onClick={() => setIsShareModalOpen(true)}
-                        style={{
-                          fontSize: '0.72rem',
-                          fontWeight: 800,
-                          color: '#20BF6B',
-                          background: 'rgba(32, 191, 107, 0.14)',
-                          padding: '0.2rem 0.6rem',
-                          borderRadius: '9999px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                          cursor: 'pointer'
-                        }}
-                        title="Click to view QR & Share details"
-                      >
-                        <Globe size={12} /> PUBLIC SHARE ACTIVE
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={() => handleToggleShare(false)}
-                        style={{
-                          background: '#FFEBEB',
-                          color: '#EB3B5A',
-                          border: '1px solid #FFC2C2',
-                          padding: '0.15rem 0.55rem',
-                          borderRadius: '9999px',
-                          fontSize: '0.7rem',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem'
-                        }}
-                        title="Stop public sharing immediately"
-                      >
-                        <ShieldOff size={11} />
-                        <span>Stop</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <span style={{
-                      fontSize: '0.7rem',
-                      fontWeight: 700,
-                      color: 'var(--text-light)',
-                      background: 'var(--surface-elevated)',
-                      padding: '0.15rem 0.55rem',
-                      borderRadius: '9999px',
-                      border: '1px solid var(--border-subtle)'
-                    }}>
-                      🔒 Private Profile
-                    </span>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  <span style={{
-                    fontSize: '0.74rem',
-                    fontWeight: 700,
-                    color: 'var(--text-muted)',
-                    background: 'var(--surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    padding: '0.25rem 0.65rem',
-                    borderRadius: '8px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.35rem'
-                  }} title="Total public views and link copies">
-                    <BarChart2 size={13} color="var(--coral-accent)" />
-                    <span>{currentSet?.view_count || 0} Views · {totalCopies} Copies</span>
-                  </span>
-
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-light)', fontWeight: 600 }}>
-                    <kbd className="kbd-badge" style={{ fontSize: '0.65rem' }}>Alt 1..3</kbd> copies top links
-                  </span>
-                </div>
-              </div>
-
-              {/* Row 3: Integrated Search Bar */}
-              <div style={{ position: 'relative', width: '100%' }}>
+              {/* Row 2: Integrated Search Bar */}
+              <div style={{ position: 'relative', width: '100%', marginTop: '0.5rem' }}>
                 <Search 
                   size={16} 
                   color="var(--text-light)" 
@@ -669,6 +536,40 @@ export default function App() {
                   <span style={{ fontSize: '0.74rem', color: 'var(--text-light)', fontWeight: 700 }}>
                     {entries.length} Items
                   </span>
+                </div>
+              </div>
+
+              {/* Footer Meta Bar */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.75rem', paddingTop: '0.65rem', borderTop: '1px solid var(--border-subtle)', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                    {currentSet?.name || 'Personal'} Vault
+                  </span>
+                  {currentSet?.is_public ? (
+                    <span 
+                      onClick={() => setIsShareModalOpen(true)}
+                      style={{
+                        fontSize: '0.7rem',
+                        fontWeight: 800,
+                        color: '#20BF6B',
+                        background: 'rgba(32, 191, 107, 0.14)',
+                        padding: '0.15rem 0.5rem',
+                        borderRadius: '9999px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <Globe size={11} /> PUBLIC
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-light)' }}>
+                      🔒 Private
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', fontSize: '0.74rem', color: 'var(--text-light)' }}>
+                  <BarChart2 size={13} color="var(--coral-accent)" />
+                  <span>{currentSet?.view_count || 0} Views · {totalCopies} Copies</span>
                 </div>
               </div>
             </div>
@@ -712,10 +613,10 @@ export default function App() {
               onCopyItem={handleCommandPaletteCopy}
             />
 
-            {/* AI Form Autofill Studio Modal */}
-            <AiFormAutofillModal
-              isOpen={isAiAutofillModalOpen}
-              onClose={() => setIsAiAutofillModalOpen(false)}
+            {/* Smart Form Autofill Studio Modal */}
+            <SmartAutofillModal
+              isOpen={isSmartAutofillModalOpen}
+              onClose={() => setIsSmartAutofillModalOpen(false)}
               entries={entries}
               currentSetName={currentSet?.name || 'Personal'}
               onOpenAddEntry={() => {
@@ -726,114 +627,53 @@ export default function App() {
 
             {/* Set New Password Modal */}
             {isResetPasswordModalOpen && (
-              <div className="modal-overlay-blur" onClick={() => setIsResetPasswordModalOpen(false)}>
-                <div 
-                  className="modal-dialog-box" 
-                  style={{ maxWidth: '440px', borderRadius: '22px' }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '1.2rem 1.6rem 1rem',
-                    borderBottom: '1px solid var(--border-subtle)',
-                    background: 'var(--surface-elevated)'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                      <div style={{
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '10px',
-                        background: '#FF5900',
-                        color: '#FFFFFF',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        <Lock size={18} />
-                      </div>
-                      <div>
-                        <h3 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.03em' }}>
-                          Set New Password
-                        </h3>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-light)', fontWeight: 500 }}>
-                          Update your login password
-                        </span>
-                      </div>
+              <Modal
+                isOpen={isResetPasswordModalOpen}
+                onClose={() => setIsResetPasswordModalOpen(false)}
+                title="Set New Password"
+                subtitle="Update your login password"
+                maxWidth="440px"
+              >
+                <form onSubmit={handleSaveNewPassword}>
+                  <div style={{ marginBottom: '1.35rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.45rem' }}>
+                      Enter New Password
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        minLength={6}
+                        autoFocus
+                        className="modern-input"
+                        style={{ paddingRight: '2.5rem' }}
+                        placeholder="At least 6 characters"
+                        value={newPasswordInput}
+                        onChange={(e) => setNewPasswordInput(e.target.value)}
+                      />
                     </div>
+                  </div>
 
+                  <div style={{ display: 'flex', gap: '0.65rem', justifyContent: 'flex-end' }}>
                     <button
                       type="button"
                       onClick={() => setIsResetPasswordModalOpen(false)}
-                      className="icon-action-button"
-                      style={{ padding: '0.4rem' }}
+                      className="btn-secondary-action"
+                      style={{ padding: '0.6rem 1.1rem', fontSize: '0.86rem' }}
                     >
-                      <X size={18} />
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn-primary-action"
+                      style={{ padding: '0.6rem 1.25rem', fontSize: '0.86rem' }}
+                    >
+                      <Save size={15} />
+                      <span>Update Password</span>
                     </button>
                   </div>
-
-                  <form onSubmit={handleSaveNewPassword} style={{ padding: '1.4rem 1.6rem' }}>
-                    <div style={{ marginBottom: '1.35rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.45rem' }}>
-                        Enter New Password
-                      </label>
-                      <div style={{ position: 'relative' }}>
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          required
-                          minLength={6}
-                          autoFocus
-                          className="modern-input"
-                          style={{ paddingRight: '2.5rem' }}
-                          placeholder="At least 6 characters"
-                          value={newPasswordInput}
-                          onChange={(e) => setNewPasswordInput(e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(prev => !prev)}
-                          style={{
-                            position: 'absolute',
-                            right: '0.75rem',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--text-light)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            padding: '4px'
-                          }}
-                          title={showPassword ? 'Password is visible (click to hide)' : 'Password is hidden (click to show)'}
-                        >
-                          {showPassword ? <Eye size={16} color="var(--coral-accent)" /> : <EyeOff size={16} />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '0.65rem', justifyContent: 'flex-end' }}>
-                      <button
-                        type="button"
-                        onClick={() => setIsResetPasswordModalOpen(false)}
-                        className="btn-secondary-action"
-                        style={{ padding: '0.6rem 1.1rem', fontSize: '0.86rem' }}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="btn-primary-action"
-                        style={{ padding: '0.6rem 1.25rem', fontSize: '0.86rem' }}
-                      >
-                        <Save size={15} />
-                        <span>Update Password</span>
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
+                </form>
+              </Modal>
             )}
           </div>
         )}

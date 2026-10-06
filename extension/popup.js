@@ -88,10 +88,10 @@ function renderEntries() {
       </div>
       <div class="entry-details">
         <div class="entry-header-row">
-          <span class="entry-title">${entry.label}</span>
-          <span class="entry-tag">${entry.entry_type || 'link'}</span>
+          <span class="entry-title"></span>
+          <span class="entry-tag"></span>
         </div>
-        <div class="entry-snippet" title="${entry.value}">${entry.value}</div>
+        <div class="entry-snippet"></div>
       </div>
       <button class="copy-btn" id="btn-${entry.id}">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -101,6 +101,12 @@ function renderEntries() {
         <span>Copy</span>
       </button>
     `;
+
+    card.querySelector('.entry-title').textContent = entry.label || '';
+    card.querySelector('.entry-tag').textContent = entry.entry_type || 'link';
+    const snippetEl = card.querySelector('.entry-snippet');
+    snippetEl.textContent = entry.value || '';
+    snippetEl.setAttribute('title', entry.value || '');
 
     const copyBtn = card.querySelector(`#btn-${entry.id}`);
     copyBtn.onclick = async () => {

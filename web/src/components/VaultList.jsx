@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabaseClient';
 import { EntryRow } from './EntryRow';
 import { AddEntryModal } from './AddEntryModal';
 import { EmptyState } from './EmptyState';
-import { ShieldAlert, CheckCircle2, Info } from 'lucide-react';
+import { Modal } from './Modal';
+import { ShieldAlert, CheckCircle2, Info, AlertTriangle } from 'lucide-react';
 
 export function VaultList({ 
   session, 
@@ -20,6 +21,7 @@ export function VaultList({
 }) {
   const [toastMessage, setToastMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [deleteConfirmTargetId, setDeleteConfirmTargetId] = useState(null);
 
   const userId = session?.user?.id || 'local-user';
 
@@ -66,8 +68,11 @@ export function VaultList({
     }
   };
 
-  const handleDeleteEntry = async (entryId) => {
-    if (!window.confirm('Are you sure you want to delete this entry?')) return;
+  const confirmDelete = async () => {
+    if (!deleteConfirmTargetId) return;
+    const entryId = deleteConfirmTargetId;
+    setDeleteConfirmTargetId(null);
+
     try {
       await supabase.entries.deleteEntry(entryId, userId);
       showToast('Entry deleted');
@@ -92,13 +97,19 @@ export function VaultList({
     }
   };
 
-  const handleMove = async (index, direction) => {
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= entries.length) return;
+  const handleMove = async (filteredIdx, direction) => {
+    const targetFilteredEntry = filteredEntries[filteredIdx];
+    if (!targetFilteredEntry) return;
+
+    const realIndex = entries.findIndex(e => e.id === targetFilteredEntry.id);
+    if (realIndex === -1) return;
+
+    const targetRealIndex = realIndex + direction;
+    if (targetRealIndex < 0 || targetRealIndex >= entries.length) return;
 
     const newEntries = [...entries];
-    const [movedItem] = newEntries.splice(index, 1);
-    newEntries.splice(targetIndex, 0, movedItem);
+    const [movedItem] = newEntries.splice(realIndex, 1);
+    newEntries.splice(targetRealIndex, 0, movedItem);
 
     try {
       await supabase.entries.reorderEntries(userId, newEntries);
@@ -145,8 +156,8 @@ export function VaultList({
       {/* Helpful Hint if Profile is Public but All Entries are Private */}
       {currentSet?.is_public && allArePrivate && (
         <div style={{
-          background: 'rgba(255, 130, 55, 0.12)',
-          border: '1px solid rgba(255, 130, 55, 0.3)',
+          background: 'rgba(217, 74, 0, 0.12)',
+          border: '1px solid rgba(217, 74, 0, 0.3)',
           color: 'var(--text-main)',
           padding: '0.75rem 1rem',
           borderRadius: '14px',
@@ -156,7 +167,7 @@ export function VaultList({
           alignItems: 'center',
           gap: '0.5rem'
         }}>
-          <Info size={16} color="#FF5900" style={{ flexShrink: 0 }} />
+          <Info size={16} color="#D94A00" style={{ flexShrink: 0 }} />
           <span>
             <strong>Note for Public Share:</strong> All {entries.length} items below are currently marked <code>Private Only</code>. Edit an item and uncheck <strong>Keep Private</strong> to make it visible on your digital share link!
           </span>
@@ -175,26 +186,29 @@ export function VaultList({
         </div>
       ) : (
         <div>
-          {filteredEntries.map((entry, idx) => (
-            <EntryRow
-              key={entry.id}
-              entry={entry}
-              index={idx}
-              availableSets={availableSets}
-              currentSetId={currentSet?.id}
-              onMoveToSet={handleMoveToAnotherSet}
-              onCopy={(item) => showToast(`Copied "${item.label}" to clipboard!`)}
-              onEdit={(item) => {
-                if (setEditingEntry) setEditingEntry(item);
-                if (setIsModalOpen) setIsModalOpen(true);
-              }}
-              onDelete={handleDeleteEntry}
-              onMoveUp={() => handleMove(idx, -1)}
-              onMoveDown={() => handleMove(idx, 1)}
-              isFirst={idx === 0}
-              isLast={idx === filteredEntries.length - 1}
-            />
-          ))}
+          {filteredEntries.map((entry, filteredIdx) => {
+            const realIdx = entries.findIndex(e => e.id === entry.id);
+            return (
+              <EntryRow
+                key={entry.id}
+                entry={entry}
+                index={realIdx >= 0 ? realIdx : filteredIdx}
+                availableSets={availableSets}
+                currentSetId={currentSet?.id}
+                onMoveToSet={handleMoveToAnotherSet}
+                onCopy={(item) => showToast(`Copied "${item.label}" to clipboard!`)}
+                onEdit={(item) => {
+                  if (setEditingEntry) setEditingEntry(item);
+                  if (setIsModalOpen) setIsModalOpen(true);
+                }}
+                onDelete={(id) => setDeleteConfirmTargetId(id)}
+                onMoveUp={() => handleMove(filteredIdx, -1)}
+                onMoveDown={() => handleMove(filteredIdx, 1)}
+                isFirst={realIdx === 0}
+                isLast={realIdx === entries.length - 1}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -209,6 +223,37 @@ export function VaultList({
           onSave={handleSaveEntry}
           editingEntry={editingEntry}
         />
+      )}
+
+      {/* In-App Delete Confirmation Modal */}
+      {deleteConfirmTargetId && (
+        <Modal
+          isOpen={Boolean(deleteConfirmTargetId)}
+          onClose={() => setDeleteConfirmTargetId(null)}
+          title="Delete Vault Item"
+          subtitle="Are you sure you want to delete this entry?"
+          maxWidth="420px"
+          icon={AlertTriangle}
+        >
+          <div style={{ textAlign: 'right', marginTop: '1.25rem', display: 'flex', gap: '0.65rem', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => setDeleteConfirmTargetId(null)}
+              className="btn-secondary-action"
+              style={{ padding: '0.6rem 1.1rem', fontSize: '0.86rem' }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmDelete}
+              className="btn-primary-action"
+              style={{ padding: '0.6rem 1.25rem', fontSize: '0.86rem', background: '#EB3B5A' }}
+            >
+              Delete Entry
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* Toast Notification */}

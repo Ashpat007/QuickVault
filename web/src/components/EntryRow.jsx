@@ -12,7 +12,8 @@ import {
   FileText,
   Lock,
   FolderInput,
-  MessageSquare
+  MessageSquare,
+  MoreVertical
 } from 'lucide-react';
 
 function GithubIcon({ size = 20 }) {
@@ -49,43 +50,27 @@ export function EntryRow({
   onMoveToSet
 }) {
   const [copied, setCopied] = useState(false);
-  const [isMoveMenuOpen, setIsMoveMenuOpen] = useState(false);
-  const cardRef = useRef(null);
-  const moveMenuRef = useRef(null);
-  const [transformStyle, setTransformStyle] = useState('');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (moveMenuRef.current && !moveMenuRef.current.contains(e.target)) {
-        setIsMoveMenuOpen(false);
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setIsMenuOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [isMenuOpen]);
 
-  const handleMouseMove = (e) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+  const handleCopyClick = async (e) => {
+    // If click originated from interactive action buttons, do not trigger row copy
+    if (e && (e.target.closest('.interactive-action') || e.target.closest('.reorder-arrow-btn'))) {
+      return;
+    }
 
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-
-    const rotateX = ((y - centerY) / centerY) * -5;
-    const rotateY = ((x - centerX) / centerX) * 5;
-
-    cardRef.current.style.setProperty('--spotlight-x', `${x}px`);
-    cardRef.current.style.setProperty('--spotlight-y', `${y}px`);
-    setTransformStyle(`perspective(1000px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) scale(1.015)`);
-  };
-
-  const handleMouseLeave = () => {
-    setTransformStyle('');
-  };
-
-  const handleCopyClick = async () => {
     try {
       await navigator.clipboard.writeText(entry.value);
       setCopied(true);
@@ -111,13 +96,14 @@ export function EntryRow({
 
   return (
     <div
-      ref={cardRef}
       className="vault-entry-card-3d"
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
+      onClick={handleCopyClick}
+      title="Click anywhere on row to 1-tap copy"
       style={{
-        transform: transformStyle,
-        animationDelay: `${index * 0.05}s`
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+        background: copied ? 'rgba(32, 191, 107, 0.08)' : 'var(--surface-card)',
+        borderColor: copied ? '#20BF6B' : 'var(--border-subtle)'
       }}
     >
       {/* Reorder Arrows */}
@@ -125,7 +111,7 @@ export function EntryRow({
         <button
           type="button"
           disabled={isFirst}
-          onClick={onMoveUp}
+          onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
           className="reorder-arrow-btn"
           title="Move Up"
         >
@@ -134,7 +120,7 @@ export function EntryRow({
         <button
           type="button"
           disabled={isLast}
-          onClick={onMoveDown}
+          onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
           className="reorder-arrow-btn"
           title="Move Down"
         >
@@ -177,7 +163,7 @@ export function EntryRow({
               alignItems: 'center',
               gap: '0.25rem'
             }}>
-              <Lock size={10} /> Private Only
+              <Lock size={10} /> Private
             </span>
           ) : (
             <span style={{
@@ -192,20 +178,6 @@ export function EntryRow({
               gap: '0.25rem'
             }}>
               Public
-            </span>
-          )}
-
-          {/* Copy Metrics */}
-          {entry.copy_count > 0 && (
-            <span style={{
-              fontSize: '0.68rem',
-              fontWeight: 700,
-              color: 'var(--text-light)',
-              background: 'var(--surface-elevated)',
-              padding: '0.15rem 0.45rem',
-              borderRadius: '6px'
-            }} title="Total copies recorded">
-              📋 {entry.copy_count} copies
             </span>
           )}
         </div>
@@ -231,8 +203,8 @@ export function EntryRow({
         )}
       </div>
 
-      {/* Right Side Action Buttons */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+      {/* Right Side 1-Tap Copy & Overflow Action Menu */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
         <button
           type="button"
           onClick={handleCopyClick}
@@ -242,41 +214,73 @@ export function EntryRow({
           <span>{copied ? 'Copied!' : 'Copy'}</span>
         </button>
 
-        <div className="row-actions-group">
-          {/* Move to Set Action Dropdown */}
-          {otherSets.length > 0 && (
-            <div style={{ position: 'relative' }} ref={moveMenuRef}>
+        {/* Overflow Action Menu (•••) */}
+        <div style={{ position: 'relative' }} ref={menuRef} className="interactive-action">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsMenuOpen(prev => !prev);
+            }}
+            className="icon-action-button"
+            title="More Options (Edit, Delete, Move)"
+            aria-label="More options"
+          >
+            <MoreVertical size={17} />
+          </button>
+
+          {isMenuOpen && (
+            <div style={{
+              position: 'absolute',
+              top: '110%',
+              right: 0,
+              background: 'var(--surface-elevated)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '12px',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+              zIndex: 100,
+              padding: '0.35rem',
+              minWidth: '150px'
+            }}>
               <button
                 type="button"
-                onClick={() => setIsMoveMenuOpen(!isMoveMenuOpen)}
-                className="icon-action-button"
-                title="Move to another profile"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMenuOpen(false);
+                  onEdit(entry);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'none',
+                  color: 'var(--text-main)',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  textAlign: 'left'
+                }}
               >
-                <FolderInput size={17} />
+                <Edit3 size={14} color="var(--coral-accent)" />
+                <span>Edit Entry</span>
               </button>
 
-              {isMoveMenuOpen && (
-                <div style={{
-                  position: 'absolute',
-                  top: '110%',
-                  right: 0,
-                  background: 'var(--surface-elevated)',
-                  border: '1.5px solid var(--border-strong)',
-                  borderRadius: '12px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
-                  zIndex: 100,
-                  padding: '0.35rem',
-                  minWidth: '140px'
-                }}>
-                  <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-light)', padding: '0.25rem 0.5rem', textTransform: 'uppercase' }}>
+              {otherSets.length > 0 && (
+                <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '0.25rem 0', paddingTop: '0.25rem' }}>
+                  <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--text-light)', padding: '0.2rem 0.75rem', textTransform: 'uppercase' }}>
                     Move to Profile
                   </div>
                   {otherSets.map((s) => (
                     <button
                       key={s.id}
                       type="button"
-                      onClick={() => {
-                        setIsMoveMenuOpen(false);
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsMenuOpen(false);
                         onMoveToSet(entry.id, s.id);
                       }}
                       style={{
@@ -291,35 +295,47 @@ export function EntryRow({
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '0.4rem',
+                        gap: '0.5rem',
                         textAlign: 'left'
                       }}
                     >
+                      <FolderInput size={13} />
                       <span>{s.name} Profile</span>
                     </button>
                   ))}
                 </div>
               )}
+
+              <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '0.25rem 0' }} />
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMenuOpen(false);
+                  onDelete(entry.id);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'none',
+                  color: '#EB3B5A',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  textAlign: 'left'
+                }}
+              >
+                <Trash2 size={14} />
+                <span>Delete Entry</span>
+              </button>
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={() => onEdit(entry)}
-            className="icon-action-button"
-            title="Edit Entry"
-          >
-            <Edit3 size={17} />
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => onDelete(entry.id)}
-            className="icon-action-button danger"
-            title="Delete Entry"
-          >
-            <Trash2 size={17} />
-          </button>
         </div>
       </div>
     </div>
