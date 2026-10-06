@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuickVault — Instant Copy Vault</title>
+  <title>QuickVault — Instant Copy Vault & Smart Autofill</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -21,14 +21,20 @@
         <span class="brand-title">QuickVault</span>
       </div>
 
-      <a href="http://127.0.0.1:5173/" target="_blank" class="header-link-btn" title="Open Full Web Dashboard">
-        <span>Dashboard</span>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-          <polyline points="15 3 21 3 21 9" />
-          <line x1="10" y1="14" x2="21" y2="3" />
-        </svg>
-      </a>
+      <div style="display: flex; align-items: center; gap: 0.35rem;">
+        <button id="autofillBtn" class="header-link-btn" title="Autofill active page form with QuickVault entries" style="background: rgba(255, 89, 0, 0.15); border: 1px solid rgba(255, 89, 0, 0.3); color: var(--text-main); font-weight: 700; cursor: pointer;">
+          <span>✨ Autofill</span>
+        </button>
+
+        <a href="http://127.0.0.1:5173/" target="_blank" class="header-link-btn" title="Open Full Web Dashboard">
+          <span>Vault</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+        </a>
+      </div>
     </header>
 
     <!-- Profile Selector Tab Bar -->

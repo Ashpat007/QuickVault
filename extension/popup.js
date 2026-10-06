@@ -1,4 +1,4 @@
-// QuickVault Chrome Extension - Instant Popup Sync Controller
+// QuickVault Chrome Extension - Instant Popup Sync & Smart Form Autofill Controller
 
 let currentSets = [{ id: 'set-personal', name: 'Personal' }];
 let currentActiveSetId = 'set-personal';
@@ -9,6 +9,7 @@ const searchInput = document.getElementById('searchInput');
 const entriesList = document.getElementById('entriesList');
 const toastBox = document.getElementById('toastBox');
 const toastText = document.getElementById('toastText');
+const autofillBtn = document.getElementById('autofillBtn');
 
 // Icon SVG helper
 function getIconSVG(type) {
@@ -30,7 +31,7 @@ function getIconSVG(type) {
 function showToast(msg) {
   toastText.textContent = msg;
   toastBox.classList.add('show');
-  setTimeout(() => toastBox.classList.remove('show'), 2000);
+  setTimeout(() => toastBox.classList.remove('show'), 2200);
 }
 
 // Render Profile Tabs
@@ -148,7 +149,7 @@ function readFromChromeStorage() {
   }
 }
 
-// Reactive Storage Listener (P2 Simplification)
+// Reactive Storage Listener
 if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local') {
@@ -167,7 +168,7 @@ if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged)
   });
 }
 
-// 1-Step Sync Controller with safe lastError handling
+// 1-Step Sync Controller
 function syncDataNow() {
   readFromChromeStorage();
 
@@ -197,6 +198,32 @@ function syncDataNow() {
       }
     });
   }
+}
+
+// Attach Autofill Button Click Handler
+if (autofillBtn) {
+  autofillBtn.onclick = () => {
+    if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs[0] && tabs[0].id) {
+          chrome.tabs.sendMessage(tabs[0].id, {
+            action: 'AUTOFILL_PAGE_FORM',
+            entries: allEntries
+          }, (response) => {
+            if (chrome.runtime.lastError) {
+              showToast('Cannot autofill on this page');
+              return;
+            }
+            if (response && response.count > 0) {
+              showToast(`✨ Autofilled ${response.count} form fields!`);
+            } else {
+              showToast('No matching form fields found');
+            }
+          });
+        }
+      });
+    }
+  };
 }
 
 searchInput.addEventListener('input', renderEntries);

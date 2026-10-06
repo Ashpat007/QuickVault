@@ -7,6 +7,7 @@ import { ShareModal } from './components/ShareModal';
 import { BackupModal } from './components/BackupModal';
 import { UserGuideModal } from './components/UserGuideModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { AiFormAutofillModal } from './components/AiFormAutofillModal';
 import { PublicSharePage } from './pages/PublicSharePage';
 import { 
   KeyRound, 
@@ -30,7 +31,8 @@ import {
   BarChart2,
   Plus,
   Search,
-  Sparkles
+  Sparkles,
+  Wand2
 } from 'lucide-react';
 
 export default function App() {
@@ -94,6 +96,7 @@ export default function App() {
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isAiAutofillModalOpen, setIsAiAutofillModalOpen] = useState(false);
   const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false);
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -148,7 +151,7 @@ export default function App() {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
-  // Global Alt + 1..3 & Ctrl + K hotkeys
+  // Global Alt + 1..3 & Ctrl + K & Ctrl + Shift + A hotkeys
   useEffect(() => {
     const handleKeyDown = async (e) => {
       const activeEl = document.activeElement;
@@ -158,6 +161,12 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsCommandPaletteOpen(prev => !prev);
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setIsAiAutofillModalOpen(prev => !prev);
         return;
       }
 
@@ -385,6 +394,20 @@ export default function App() {
           </div>
 
           <div className="nav-actions">
+            {/* AI Form Autofill Trigger */}
+            {session && (
+              <button
+                type="button"
+                onClick={() => setIsAiAutofillModalOpen(true)}
+                className="nav-btn-icon"
+                title="AI Form Autofill Assistant (Ctrl + Shift + A)"
+                style={{ background: 'rgba(255, 89, 0, 0.12)', border: '1px solid rgba(255, 89, 0, 0.3)' }}
+              >
+                <Sparkles size={14} color="#FF5900" />
+                <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>AI Autofill</span>
+              </button>
+            )}
+
             {/* Command Palette Trigger */}
             {session && (
               <button
@@ -485,6 +508,17 @@ export default function App() {
                 />
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsAiAutofillModalOpen(true)}
+                    className="btn-secondary-action"
+                    style={{ padding: '0.55rem 1rem', fontSize: '0.84rem' }}
+                    title="Open AI Form Autofill Studio"
+                  >
+                    <Sparkles size={15} color="#FF5900" />
+                    <span>AI Autofill</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setIsShareModalOpen(true)}
@@ -676,6 +710,18 @@ export default function App() {
               onClose={() => setIsCommandPaletteOpen(false)}
               entries={entries}
               onCopyItem={handleCommandPaletteCopy}
+            />
+
+            {/* AI Form Autofill Studio Modal */}
+            <AiFormAutofillModal
+              isOpen={isAiAutofillModalOpen}
+              onClose={() => setIsAiAutofillModalOpen(false)}
+              entries={entries}
+              currentSetName={currentSet?.name || 'Personal'}
+              onOpenAddEntry={() => {
+                setEditingEntry(null);
+                setIsModalOpen(true);
+              }}
             />
 
             {/* Set New Password Modal */}
